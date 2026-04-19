@@ -1,0 +1,421 @@
+---
+title: "Event handlers and triggers in OpenBeken"
+description: "Complete reference for OpenBeken event handlers: button clicks, hold, double-click, MQTT state, NTP sync, WiFi state, power readings, IR codes, and TuyaMCU events."
+---
+
+OpenBeken's event system lets your device react to things that happen in the real world: a button press, an MQTT connection coming online, a power reading crossing a threshold, or a specific time of day. You register handlers in your `autoexec.bat` script (or at runtime in the console), and the firmware calls the associated command whenever the event fires. Two commands cover almost every use case: `AddEventHandler` for named system events, and `AddChangeHandler` for value-based conditions on channels and sensor readings.
+
+## `AddEventHandler` syntax
+
+```bash
+// AddEventHandler [EventName] [EventArgument] [CommandToRun]
+AddEventHandler OnClick 26 POWER TOGGLE
+AddEventHandler OnDblClick 26 publish myClickIs doubleClick
+AddEventHandler MQTTState 1 publish status/boot ready
+```
+
+The **EventArgument** is event-specific. For button events it is the GPIO pin number. For state events like `MQTTState` or `NTPState` it is the state value to match.
+
+## `AddChangeHandler` syntax
+
+`AddChangeHandler` watches a named variable and fires when a comparison becomes true. It supports `==`, `!=`, `>`, `>=`, `<`, and `<=`.
+
+```bash
+// AddChangeHandler [Variable] [Operator] [Value] [CommandToRun]
+
+// Fire when channel 1 becomes exactly 1
+AddChangeHandler Channel1 == 1 addRepeatingEvent 60 1 setChannel 1 0
+
+// Fire when channel 1 becomes non-zero
+AddChangeHandler Channel1 != 0 SendGet http://192.168.0.112/cm?cmnd=Power0%20On
+
+// Fire when power reading exceeds 2 amps (current is scaled *1000)
+AddChangeHandler Current > 2000 setChannel 1 0
+
+// Fire when WiFi state changes to anything other than connected
+AddChangeHandler WiFiState != 4 setPinRole 10 WifiLED_n
+```
+
+<Note>
+  `AddChangeHandler` compares values as integers. Sensor readings like `Current` and `Frequency` are scaled: current is multiplied by 1000, frequency by 100. So `Current > 2000` means greater than 2 amps.
+</Note>
+
+---
+
+## Button and pin events
+
+These events fire in response to physical button activity on a GPIO pin. The event argument is the **pin number** (not the channel number). Set the pin's role to `Button_ScriptOnly` in the GPIO configuration so the button does not also control a channel directly, or use `Button_ToggleAll` if you want both.
+
+<AccordionGroup>
+  <Accordion title="OnClick — single press and release">
+    Fires once when the button is pressed and released within the click time window.
+
+    ```bash
+    // Toggle power on single click of button on pin 26
+    addEventHandler OnClick 26 POWER TOGGLE
+
+    // Publish a message on click
+    addEventHandler OnClick 26 publish myDevice/button click
+    ```
+  </Accordion>
+  <Accordion title="OnDblClick, On3Click, On4Click, On5Click — multi-click">
+    Fires after two, three, four, or five consecutive clicks within the multi-click detection window. These are ideal for controlling multiple channels from a single button.
+
+    ```bash
+    // Four-channel power strip controlled with one button
+    addEventHandler OnClick    26 ToggleChannel 1
+    addEventHandler OnDblClick 26 ToggleChannel 2
+    addEventHandler On3Click   26 ToggleChannel 3
+    addEventHandler On4Click   26 ToggleChannel 4
+    addEventHandler On5Click   26 ToggleChannel 5
+
+    // Publish different MQTT messages per click count
+    addEventHandler OnDblClick 26 publish myClickIs doubleClick
+    addEventHandler On3Click   26 publish myClickIs tripleClick
+    addEventHandler On4Click   26 publish myClickIs quadraClick
+    addEventHandler On5Click   26 publish myClickIs pentaClick
+    ```
+
+    <Tip>
+      Use `SetButtonTimes` to tune the click detection timing: `SetButtonTimes [ClickMs] [DblClickMs] [HoldMs]`.
+    </Tip>
+  </Accordion>
+  <Accordion title="OnHold and OnHoldStart — long press">
+    `OnHoldStart` fires once when the hold threshold is crossed. `OnHold` fires repeatedly while the button remains held, making it useful for continuous dimmer adjustment.
+
+    ```bash
+    // Hold to increase LED dimmer; hold other button to decrease
+    addEventHandler OnHold 23 led_addDimmer 10
+    addEventHandler OnHold 22 led_addDimmer -10
+
+    // Enter safe mode on 5-second hold of pin 10
+    addEventHandler OnHold 10 SafeMode 5
+    ```
+  </Accordion>
+  <Accordion title="OnPress and OnRelease — raw state">
+    `OnPress` fires the moment the button is pressed down; `OnRelease` fires when it is released. Use these when you need to react to the raw edge rather than a debounced click.
+
+    ```bash
+    addEventHandler OnPress   8 setChannel 1 1
+    addEventHandler OnRelease 8 setChannel 1 0
+    ```
+  </Accordion>
+  <Accordion title="OnToggle — any state change">
+    Fires on every state change of the pin, regardless of direction.
+
+    ```bash
+    addEventHandler OnToggle 26 publish button/raw $CH1
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Channel and value change events
+
+<AccordionGroup>
+  <Accordion title="channel&lt;X&gt; — channel value changed">
+    Fires whenever channel X changes to any new value. The event argument is the channel index.
+
+    ```bash
+    // Save channel 1 state to flash channel 201 on every change
+    addEventHandler OnChannelChange 1 setChannel 201 $CH1
+
+    // React to channel 4 changing
+    addEventHandler OnChannelChange 4 publish sensors/ch4 $CH4
+    ```
+  </Accordion>
+  <Accordion title="OnChannelChange — alias for the above">
+    `OnChannelChange` is the named form; `channel<X>` is the positional form. Both behave identically.
+
+    ```bash
+    addEventHandler OnChannelChange 3 myset
+    ```
+  </Accordion>
+  <Accordion title="AddChangeHandler with comparison operators">
+    For threshold-based reactions use `AddChangeHandler` with an operator. This fires every time the condition changes from false to true.
+
+    ```bash
+    // Inching relay: turn off 10 seconds after it turns on
+    addChangeHandler Channel1 == 1 addRepeatingEvent 10 1 setChannel 1 0
+
+    // Auto-off on HTTP control from another device
+    addChangeHandler Channel1 == 0 SendGet http://192.168.0.112/cm?cmnd=Power0%20OFF
+    addChangeHandler Channel1 == 1 SendGet http://192.168.0.112/cm?cmnd=Power0%20ON
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Connectivity events
+
+<AccordionGroup>
+  <Accordion title="MQTTState — MQTT connection state">
+    Fires when the MQTT connection state changes. State `1` means connected.
+
+    ```bash
+    // Publish a boot message when MQTT comes online
+    addEventHandler MQTTState 1 publish status/boot ready
+
+    // Wait for MQTT before continuing script execution
+    waitFor MQTTState 1
+    delay_s 1
+    publish myVariable 2022
+    ```
+
+    You can also watch it with `AddChangeHandler`:
+    ```bash
+    addChangeHandler MQTTState == 1 publish status/online true
+    ```
+  </Accordion>
+  <Accordion title="NoMQTTTime — time since last MQTT message">
+    Tracks how many seconds have passed without an MQTT connection. Useful for watchdog logic.
+
+    ```bash
+    addChangeHandler NoMQTTTime > 300 reboot
+    ```
+  </Accordion>
+  <Accordion title="WiFiState — Wi-Fi connection state">
+    State `4` is `WIFI_STA_CONNECTED` (fully connected with an IP). Lower values indicate connecting or disconnected states.
+
+    ```bash
+    // Switch LED role: act as WiFi indicator while connecting, relay LED when online
+    alias mode_wifi  setPinRole 10 WifiLED_n
+    alias mode_relay setPinRole 10 LED_n
+
+    mode_wifi
+    addChangeHandler WiFiState == 4 mode_relay
+    addChangeHandler WiFiState != 4 mode_wifi
+    ```
+  </Accordion>
+  <Accordion title="IPChange — IP address changed">
+    Fires when the device's IP address changes, for example after reconnecting to Wi-Fi.
+
+    ```bash
+    addEventHandler IPChange 0 publish network/ip changed
+    ```
+  </Accordion>
+  <Accordion title="noPingTime — ping watchdog">
+    Fires when the ping watchdog counter changes. Use `AddChangeHandler` with a threshold to detect a target host going offline.
+
+    ```bash
+    PingHost 192.168.0.1
+    PingInterval 10
+    addChangeHandler noPingTime > 600 reboot
+    ```
+  </Accordion>
+  <Accordion title="OnMQTT — incoming MQTT message">
+    Fires when an MQTT message arrives on any subscribed topic.
+
+    ```bash
+    addEventHandler OnMQTT 0 echo Got an MQTT message
+    ```
+  </Accordion>
+  <Accordion title="OnHTTP — incoming HTTP request">
+    Fires when an HTTP request arrives at the device.
+
+    ```bash
+    addEventHandler OnHTTP 0 echo Got HTTP request
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Time events
+
+<AccordionGroup>
+  <Accordion title="NTPState — NTP sync state">
+    Fires when the NTP state changes. State `1` means the clock is synced.
+
+    ```bash
+    startDriver NTP
+    // Block execution until NTP syncs
+    waitFor NTPState 1
+
+    // Or react asynchronously
+    AddEventHandler NTPState 1 set_now_colour
+    ```
+  </Accordion>
+  <Accordion title="addClockEvent — wall-clock trigger">
+    Schedules a command at a specific time on selected days of the week. Requires NTP.
+
+    ```bash
+    // Fire every day at 06:01 (ID=1)
+    addClockEvent 06:01 0xff 1 day_lights
+
+    // Fire every Sunday and Monday at 08:00 (ID=234)
+    addClockEvent 8:00:00 0x03 234 backlog led_temperature 500; led_dimmer 100; led_enableAll 1
+
+    // Fire at civil sunset every day (ID=13); requires ntp_setLatlong
+    addClockEvent sunset 0x7f 13 POWER ON
+    ```
+
+    Remove a clock event by its ID:
+    ```bash
+    removeClockEvent 13
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## LED events
+
+These events are only available when `ENABLE_LED_BASIC` is compiled in.
+
+<AccordionGroup>
+  <Accordion title="LEDState — LED on/off state changed">
+    Fires when the LED enable state changes.
+
+    ```bash
+    addEventHandler LEDState 1 publish lights/state on
+    addEventHandler LEDState 0 publish lights/state off
+    ```
+  </Accordion>
+  <Accordion title="LEDMode — LED mode changed">
+    Fires when the LED mode (RGB, CCT, white, etc.) changes.
+
+    ```bash
+    addEventHandler LEDMode 0 echo LED switched to white mode
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Power metering events
+
+These events are available when `ENABLE_BL_SHARED` is compiled in (BL0942, BL0937, and compatible chips).
+
+<AccordionGroup>
+  <Accordion title="power — watt reading changed">
+    Fires whenever the power reading changes.
+
+    ```bash
+    // Turn off socket if power exceeds 2400 W
+    AddChangeHandler power > 2400 setChannel 1 0
+
+    // Publish power reading to MQTT on every change
+    addEventHandler OnChannelChange 3 publish power/watts $CH3
+    ```
+  </Accordion>
+  <Accordion title="current — ampere reading changed">
+    Current is scaled by 1000 (so 2 amps = value 2000).
+
+    ```bash
+    // Cut power when current exceeds 10 amps
+    AddChangeHandler Current > 10000 setChannel 1 0
+    ```
+  </Accordion>
+  <Accordion title="voltage — volt reading changed">
+    ```bash
+    AddChangeHandler voltage < 2000 publish power/lowvoltage true
+    ```
+  </Accordion>
+  <Accordion title="frequency — mains frequency changed">
+    Frequency is scaled by 100 (so 50 Hz = value 5000).
+
+    ```bash
+    // Turn off when frequency exceeds 52.95 Hz
+    AddChangeHandler Frequency > 5295 setChannel 1 0
+    ```
+  </Accordion>
+  <Accordion title="energy and energycounter_last_hour — consumption">
+    Track total energy consumption and last-hour consumption.
+
+    ```bash
+    addEventHandler OnChannelChange 5 publish energy/total $CH5
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## IR remote events
+
+IR events require `ENABLE_DRIVER_IRREMOTEESP`, `ENABLE_DRIVER_IR`, or `ENABLE_DRIVER_IR2`. Use `addEventHandler2` because IR events carry two arguments (address and command).
+
+```bash
+// addEventHandler2 [EventName] [Address] [Command] [CommandToRun]
+addEventHandler2 IR_Samsung  0x707 0x61 led_enableAll 0
+addEventHandler2 IR_Samsung  0x707 0x60 led_enableAll 1
+addEventHandler2 IR_Samsung  0x707 0x62 add_dimmer 10
+addEventHandler2 IR_Samsung  0x707 0x65 add_dimmer -10
+```
+
+Supported IR protocols:
+
+| Event name | Protocol |
+|---|---|
+| `IR_NEC` | NEC |
+| `IR_Samsung` | Samsung |
+| `IR_RC5` | Philips RC5 |
+| `IR_RC6` | Philips RC6 |
+| `IR_SONY` | Sony SIRC |
+| `IR_SHARP` | Sharp |
+| `IR_PANASONIC` | Panasonic |
+| `IR_SAMSUNG_LG` | Samsung/LG variant |
+
+---
+
+## TuyaMCU events
+
+These events are available when the TuyaMCU driver is running (`startDriver TuyaMCU`).
+
+<AccordionGroup>
+  <Accordion title="TuyaMCUParsed — MCU data packet received">
+    Fires each time a data packet from the MCU is parsed.
+
+    ```bash
+    addEventHandler TuyaMCUParsed 0 echo MCU sent a packet
+    ```
+  </Accordion>
+  <Accordion title="OnDP — specific data point received">
+    Fires when a specific dpId value is received.
+
+    ```bash
+    addEventHandler OnDP 1 echo DP1 changed
+    ```
+  </Accordion>
+  <Accordion title="MissedHeartbeats — MCU heartbeat lost">
+    Fires when expected heartbeat packets from the MCU are not received.
+
+    ```bash
+    addEventHandler MissedHeartbeats 3 reboot
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Other events
+
+| Event | Description |
+|---|---|
+| `OnUART` | Fires when data arrives on the UART. |
+| `OnADCButton` | Fires when an ADC-mapped button is pressed. |
+| `OnCustomDown` / `OnCustomUP` | Custom events fired by script logic. |
+| `OnCMD` | Fires when a command is executed. |
+| `OnDiscovery` | Fires during Home Assistant discovery. |
+| `RC` | Remote control event. |
+
+---
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Scripting overview" icon="code" href="/scripting/overview">
+    How the scripting system works, channel variables, backlog, and uploading scripts via LittleFS.
+  </Card>
+  <Card title="Real-world autoexec.bat examples" icon="file-code" href="/scripting/autoexec-examples">
+    Complete working scripts for relays, dimmers, fan controllers, power meters, and sensors.
+  </Card>
+  <Card title="Command reference" icon="terminal" href="/reference/commands">
+    Full list of every command with arguments.
+  </Card>
+  <Card title="MQTT setup" icon="wifi" href="/connectivity/mqtt-setup">
+    Connect your device to an MQTT broker to use MQTTState, OnMQTT, and publish commands.
+  </Card>
+</CardGroup>

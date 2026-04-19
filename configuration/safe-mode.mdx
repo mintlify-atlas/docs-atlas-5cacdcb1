@@ -1,0 +1,125 @@
+---
+title: "OpenBeken safe mode and recovery options"
+description: "Safe mode disables GPIO pins and drivers, giving you a clean network connection to fix a broken configuration, remove a bad autoexec.bat, or reset the device."
+---
+
+OpenBeken tracks how many times the device has completed a **full boot** — defined as a boot after which the device remained running for at least 30 seconds. If you power-cycle the device repeatedly without letting it reach that 30-second threshold, the boot counter increments each time. When the counter reaches the threshold (five incomplete boots in a row), the firmware enters **safe mode** and simultaneously opens an **access point** so you can connect to it directly.
+
+In safe mode, the pin driver subsystem is not initialised at all, and no drivers are started. This means that a broken `autoexec.bat` that crashes the device on every boot, or a GPIO configuration that puts the device into an unrecoverable state, cannot prevent you from connecting to the web interface. Safe mode is intentionally minimal: it gives you just enough functionality to correct the configuration and get the device running normally again.
+
+## What is disabled in safe mode
+
+- All GPIO pin roles — relays, buttons, LEDs, and sensor inputs are not initialised
+- All drivers — TuyaMCU, BL0942, NTP, and any others that normally start from `autoexec.bat` or from pin roles are not started
+- The `autoexec.bat` script is not executed
+
+The web interface, Wi-Fi, and MQTT are still available (MQTT connects if credentials were already saved), so you can change settings, upload or delete files, and issue console commands.
+
+<Note>
+In safe mode the Wi-Fi LED indicator may not work normally, since the LED_WIFI pin role is not initialised.
+</Note>
+
+## Recovery procedure
+
+<Steps>
+  <Step title="Trigger safe mode with five rapid power cycles">
+    Power the device on and off five times in quick succession, turning it off each time **before** the 30-second full-boot window expires. On most devices this means cycling power with roughly 2–5 second intervals. After the fifth incomplete boot the device enters safe mode.
+  </Step>
+
+  <Step title="Connect to the device access point">
+    The device opens a Wi-Fi access point. The SSID is based on the device's short name (for example `OBK_AABBCCDD`). Connect to this network from your phone or laptop. No password is required unless you configured one. Navigate to `http://192.168.4.1` in a browser to reach the web interface.
+
+    If the device was previously connected to your router and you know its IP address, you may be able to reach it over your normal network instead.
+  </Step>
+
+  <Step title="Identify the problem">
+    Common causes of repeated boot failures:
+
+    - A command in `autoexec.bat` that causes a crash or an infinite loop
+    - A GPIO pin role that conflicts with the hardware, causing unexpected electrical behaviour
+    - A corrupted LittleFS filesystem
+
+    Navigate to **Config → Console** or **Config → LittleFS** to inspect the current state.
+  </Step>
+
+  <Step title="Fix or remove autoexec.bat">
+    If a broken `autoexec.bat` is the cause, you have two options:
+
+    **Option A — Edit the file directly.** Open **Config → LittleFS**, find `autoexec.bat`, and edit or delete the problematic command.
+
+    **Option B — Format the LittleFS filesystem.** Run the following command from the web console:
+
+    ```bash
+    lfs_format
+    ```
+
+    This erases the entire LittleFS partition, removing `autoexec.bat` and any other stored files. The main device configuration (Wi-Fi credentials, GPIO roles, MQTT settings) is stored separately in a dedicated flash sector and is **not** affected by `lfs_format`.
+
+    <Warning>
+    `lfs_format` permanently deletes all files on the LittleFS filesystem, including custom scripts, widget HTML files, and certificate files. Only use it if you cannot recover the filesystem any other way.
+    </Warning>
+  </Step>
+
+  <Step title="Fix GPIO pin configuration if needed">
+    If the problem is a bad GPIO pin assignment, navigate to **Config → GPIO** and correct the roles. Set pins that were incorrectly configured back to **None** as a first step, then re-assign them correctly.
+  </Step>
+
+  <Step title="Reset the full configuration if necessary">
+    If you need to start completely from scratch, run:
+
+    ```bash
+    clearConfig
+    ```
+
+    This resets all saved settings (Wi-Fi credentials, GPIO roles, MQTT configuration, channel types, flags) to their factory defaults. After running `clearConfig` the device will reboot and open its access point for initial setup.
+
+    <Warning>
+    `clearConfig` erases all configuration. You will need to re-enter your Wi-Fi credentials and redo all GPIO, MQTT, and channel configuration. Use this only as a last resort.
+    </Warning>
+  </Step>
+
+  <Step title="Reboot into normal mode">
+    Once the configuration is corrected, reboot the device normally. Let it run for at least 30 seconds to complete a full boot and reset the boot failure counter. The device will exit safe mode and operate normally.
+
+    If the device still fails to complete a full boot, it will re-enter safe mode automatically on the next set of five incomplete boots, allowing you to try again.
+  </Step>
+</Steps>
+
+## Adjusting the full-boot threshold
+
+The number of seconds the device must run before a boot is considered "full" defaults to 30. You can change this with the `FullBootTime` command:
+
+```bash
+# Increase the threshold to 60 seconds (useful for slow-starting sensors)
+FullBootTime 60
+
+# Reduce to 10 seconds (for faster recovery in testing)
+FullBootTime 10
+```
+
+A longer threshold gives the device more time to fully initialise before the counter is reset, which is useful if you have a slow sensor or network operation at startup that might otherwise be interrupted by a premature power cycle.
+
+## Safe mode and authentication
+
+By default, the web interface requires your configured password even in safe mode. If you have forgotten the password and are locked out, Flag 44 (**Disable authentication in safe mode**) bypasses the password check when the device is in safe mode. This flag is off by default and is noted in the flags reference as not recommended for permanent use.
+
+<Tip>
+If you regularly need console access during development, consider enabling the TCP console server (Flag 5) and using PuTTY or a similar terminal to connect over TCP. This gives you command-line access independently of the web interface.
+</Tip>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="GPIO pin roles" icon="cpu" href="/configuration/gpio-pins">
+    Correctly assigning pin roles prevents the most common causes of boot failure.
+  </Card>
+  <Card title="Driver system overview" icon="puzzle" href="/configuration/drivers-overview">
+    Understanding which drivers start automatically and how to control them in autoexec.bat.
+  </Card>
+  <Card title="Scripting and autoexec" icon="code" href="/scripting/autoexec-examples">
+    Practical autoexec.bat examples to understand what safe mode protects against.
+  </Card>
+  <Card title="Flags reference" icon="flag" href="/reference/flags">
+    Flag 44 (disable authentication in safe mode) and Flag 36 (disable all driver autostart).
+  </Card>
+</CardGroup>

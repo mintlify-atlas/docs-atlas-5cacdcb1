@@ -1,0 +1,222 @@
+---
+title: "Automate OpenBeken with scripts and commands"
+description: "Learn how OpenBeken's scripting system works: commands, channel variables, repeating events, clock-based triggers, and LittleFS autoexec.bat files."
+---
+
+OpenBeken includes a full scripting system that lets you automate device behaviour without any external controller. You write plain-text commands — the same ones you can type into the web console — and combine them into scripts that run at boot, on a schedule, or in response to button presses, MQTT messages, and sensor readings. The system is intentionally simple: every script is a sequence of commands, and the same command language works everywhere from the one-liner you type in the console to a multi-hundred-line `autoexec.bat` stored in LittleFS.
+
+## How the scripting system works
+
+OpenBeken executes commands in a single interpreter shared across all contexts. A command can set a channel value, subscribe to an event, schedule a timer, or call another command by alias. Scripts are just files full of commands — there is no separate scripting language to learn.
+
+The three places you can put commands are:
+
+<AccordionGroup>
+  <Accordion title="Short Startup Command (flash, up to 512 chars)">
+    The **Short Startup Command** lives in flash memory and runs every time the device boots. You set it through **Config → Short Startup Command** in the web interface. Because it is stored in flash it survives a LittleFS format, but it is limited to 512 characters. Use it for a handful of setup commands when you do not need a full script file.
+
+    ```bash short startup command example
+    startDriver NTP; ntp_timeZoneOfs 2; startDriver SSDP
+    ```
+  </Accordion>
+  <Accordion title="autoexec.bat (LittleFS, unlimited size)">
+    `autoexec.bat` is stored in the LittleFS filesystem on the device and executed at every boot. It has no practical size limit and supports the full scripting feature set: labels, `goto`, loops, `if`/`then`, `alias`, multi-line event handlers, and blocking `waitFor` calls. Upload it through **Web Application → LittleFS** in the web interface.
+
+    ```bash autoexec.bat skeleton
+    // autoexec.bat runs at every boot
+    startDriver NTP
+    startDriver SSDP
+    waitFor NTPState 1
+    echo NTP synced, time is $hour:$minute
+    ```
+  </Accordion>
+  <Accordion title="Runtime commands (console or MQTT)">
+    Any command can be sent at runtime through the web console (**Console** tab), over MQTT (`cmnd/DEVICENAME/backlog`), or via HTTP (`/cm?cmnd=...`). Runtime commands are useful for testing, one-off operations, or controlling one device from another.
+
+    ```bash runtime command example
+    SetChannel 1 1
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Running multiple commands: `backlog`
+
+`backlog` lets you run several commands in a single call by separating them with semicolons. It is essential whenever an event handler or repeating event needs to do more than one thing.
+
+```bash backlog examples
+// Turn on relay 1 and turn off relay 2 at the same time
+backlog SetChannel 1 1; SetChannel 2 0
+
+// Enable a driver, set a channel type, and publish a status message
+backlog startDriver NTP; setChannelType 3 temperature; publish status/boot 1
+```
+
+<Note>
+  `backlog` is evaluated left-to-right. Each command runs before the next one starts. If you need a delay between commands, put the delay in a script loop rather than inside `backlog`.
+</Note>
+
+## Channel variables
+
+Channels are the core data bus in OpenBeken. Every GPIO output, sensor reading, and virtual value lives in a numbered channel. You reference channel values in command strings using `$CH<N>` substitution.
+
+| Variable | Meaning |
+|---|---|
+| `$CH0` | Value of channel 0 |
+| `$CH1` | Value of channel 1 |
+| `$CH3` | Value of channel 3 (and so on) |
+| `$hour` | Current hour (requires NTP) |
+| `$minute` | Current minute (requires NTP) |
+| `$sunset` | Seconds past midnight of today's sunset (requires NTP + lat/long) |
+| `$led_enableAll` | Current LED on/off state (0 or 1) |
+
+```bash channel variable examples
+// Publish the current value of channel 3 to MQTT
+publish sensors/temp $CH3
+
+// Turn off channel 1 only when channel 2 is zero
+if $CH2==0 then setChannel 1 0
+
+// Use channel 3 as a delay variable
+delay_ms $CH11
+```
+
+<Tip>
+  You can use any channel as an in-memory variable even if no GPIO is attached to it. Set it with `setChannel` and read it back with `$CH<N>` in any command string.
+</Tip>
+
+## Scheduling with `addRepeatingEvent`
+
+`addRepeatingEvent` starts a timer that runs a command after a fixed interval. Set the repeat count to `-1` to run forever, or to a positive integer to run a limited number of times.
+
+```bash
+// Syntax: addRepeatingEvent [IntervalSeconds] [RepeatsOr-1] [CommandToRun]
+
+// Publish channel 3 value to MQTT every 60 seconds, forever
+addRepeatingEvent 60 -1 publish sensors/temp $CH3
+
+// Toggle LED state every 5 seconds, forever
+addRepeatingEvent 5 -1 led_enableAll !$led_enableAll
+
+// Turn off relay 1 exactly once after 10 seconds
+addRepeatingEvent 10 1 setChannel 1 0
+
+// Send an HTTP GET to a Tasmota device every 15 seconds
+addRepeatingEvent 15 -1 SendGet http://192.168.0.112/cm?cmnd=Power0%20Toggle
+```
+
+To cancel a repeating event later, use `addRepeatingEventID` when creating it (which assigns a numeric ID), then call `cancelRepeatingEvent` with that ID:
+
+```bash
+// Create event with ID 123456
+addRepeatingEventID 5 1 123456 setChannel 1 0
+
+// Later, cancel it before it fires
+cancelRepeatingEvent 123456
+```
+
+## Scheduling with `addClockEvent`
+
+`addClockEvent` fires a command at a specific wall-clock time on selected days of the week. It requires the NTP driver to be running.
+
+```bash
+// Syntax: addClockEvent [Time] [WeekDayFlags] [UniqueID] [Command]
+// WeekDayFlags: 0xff = every day, 0x01 = Sunday, 0x02 = Monday, 0x03 = Sunday+Monday, etc.
+
+// Turn on warm light at 20:01 every day (ID=1)
+addClockEvent 20:01 0xff 1 backlog led_temperature 500; led_dimmer 50; led_enableAll 1
+
+// Turn off at sunrise every day (ID=2); requires lat/long set with ntp_setLatlong
+addClockEvent sunrise 0xff 2 led_enableAll 0
+
+// Turn on power every Sunday and Monday at 12:00 (ID=567)
+addClockEvent 12:00:00 0x03 567 POWER ON
+```
+
+<Warning>
+  `addClockEvent` with `sunrise` or `sunset` requires the firmware to be compiled with `ENABLE_TIME_SUNRISE_SUNSET`. Set your latitude and longitude using `ntp_setLatlong` so the calculation is correct for your location.
+</Warning>
+
+## Aliases
+
+`alias` creates a short name for a longer command string. This keeps event handlers readable and lets you reuse logic across multiple places in a script.
+
+```bash alias examples
+// Define an alias
+alias turn_off_relay setChannel 1 0
+
+// Use it in a change handler
+addChangeHandler Channel2 == 0 turn_off_relay
+
+// Alias can wrap a backlog for multi-step actions
+alias day_lights backlog led_temperature 200; led_dimmer 100; led_enableAll 1
+alias night_lights backlog led_temperature 500; led_dimmer 50; led_enableAll 1
+
+addClockEvent 06:01 0xff 1 day_lights
+addClockEvent 20:01 0xff 2 night_lights
+```
+
+## Script flow control
+
+Scripts stored in `autoexec.bat` (or any LittleFS file) support labels, `goto`, `if`/`then`, and `delay_s`/`delay_ms` for building loops and conditional logic.
+
+```bash loop example
+// Blink relay 1 ten times then stop
+setChannel 11 0
+
+again:
+if $CH11>=10 then goto done
+toggleChannel 1
+addChannel 11 1
+delay_ms 500
+goto again
+
+done:
+setChannel 1 0
+```
+
+```bash waitFor example
+// Block until NTP is synced, then act on the current hour
+startDriver NTP
+waitFor NTPState 1
+
+if $hour>=06&&$hour<21 then day_lights
+if $hour>=21||$hour<06  then night_lights
+```
+
+## Uploading `autoexec.bat` via LittleFS
+
+<Steps>
+  <Step title="Open the web interface">
+    Navigate to your device's IP address in a browser and open **Web Application**.
+  </Step>
+  <Step title="Go to the LittleFS tab">
+    Select the **LittleFS** tab. This shows all files stored in the device's filesystem.
+  </Step>
+  <Step title="Upload your script">
+    Use the file upload control to upload a plain-text file named exactly `autoexec.bat`. The file will appear in the file list once the upload completes.
+  </Step>
+  <Step title="Reboot the device">
+    Send `reboot` from the console, or press the physical reset button. The device will execute `autoexec.bat` on the next boot.
+  </Step>
+</Steps>
+
+<Note>
+  Changes to `autoexec.bat` only take effect after a reboot. If you want to test individual commands without rebooting, paste them directly into the web console.
+</Note>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Event handlers and triggers" icon="bolt" href="/scripting/events">
+    Button clicks, MQTT messages, power readings, WiFi state, and more — all the events you can react to.
+  </Card>
+  <Card title="Real-world autoexec.bat examples" icon="file-code" href="/scripting/autoexec-examples">
+    Complete, working script files for common device types: dimmers, power sockets, fan controllers, and sensors.
+  </Card>
+  <Card title="Command reference" icon="terminal" href="/reference/commands">
+    Full alphabetical list of every command OpenBeken supports with arguments and descriptions.
+  </Card>
+  <Card title="Channel types" icon="sliders" href="/configuration/channel-types">
+    How to set channel display types for the web UI and Home Assistant discovery.
+  </Card>
+</CardGroup>

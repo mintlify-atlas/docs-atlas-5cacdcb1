@@ -1,0 +1,170 @@
+---
+title: "Configure GPIO pin roles in OpenBeken"
+description: "Assign roles to physical GPIO pins so OpenBeken knows how each pin behaves — as a relay, button, LED, ADC input, sensor data line, or TuyaMCU serial port."
+---
+
+Every physical GPIO pin on a Beken (or compatible) module starts with the role **None**, meaning the firmware ignores it completely. The GPIO pin configuration screen in the web interface lets you assign a named role to each pin and, where relevant, link it to a numbered channel. Getting the pin roles right is the single most important configuration step for any device: a relay that is never assigned to a channel will never switch, and a button that is not linked to the same channel as its relay will never control it.
+
+## How pin roles and channels work together
+
+Each pin role interacts with a **channel** — a numbered variable (1–32 by default) that holds the current state of a logical device function. When a button is pressed it writes to its linked channel; a relay reads from the same channel and closes or opens accordingly. This one-to-one link is what connects physical hardware to logical state without needing any scripting.
+
+<Note>
+Channel numbering starts at **1**. Setting a button's channel to `1` and the relay's channel to `1` is what makes the button control the relay.
+</Note>
+
+For PWM outputs used in colour lights, the channel number doubles as the **RGBCW colour index**:
+
+| Channel | Colour component |
+|---------|-----------------|
+| 1 | Red |
+| 2 | Green |
+| 3 | Blue |
+| 4 | Cool white |
+| 5 | Warm white |
+
+Set the PWM pin's channel to match the correct index so the light system maps each PWM output to the right colour.
+
+## Common pin roles
+
+<AccordionGroup>
+  <Accordion title="Relay and relay (inverted)">
+    **Relay** is an active-high digital output. The pin is driven high when the linked channel value is `1` (on) and low when it is `0` (off). Use this for the vast majority of mains-switching smart plug and switch modules.
+
+    **Relay_n** behaves identically but with the output logic inverted — the pin is driven low when the channel is `1`. Some modules use a low-side transistor that closes the relay when the control pin is pulled to ground.
+  </Accordion>
+
+  <Accordion title="Button and button variants">
+    **Button** expects an active-low input: the pin is pulled to ground through a 10 kΩ (or similar) pull-up resistor when the button is not pressed, and connects to ground when pressed. Pressing toggles the linked channel.
+
+    **Button_n** inverts this logic for buttons wired with pull-down resistors.
+
+    **Button_ToggleAll** / **Button_ToggleAll_n** toggle every channel simultaneously — useful for a single power button on a multi-outlet strip.
+
+    **Button_NextColor**, **Button_NextDimmer**, and **Button_NextTemperature** are dedicated to LED strip controllers where separate physical buttons cycle through colour presets, brightness levels, or colour temperature steps.
+
+    **SmartButtonForLEDs** combines all LED actions into a single button: a single click toggles power, a hold adjusts brightness, a double-click steps to the next colour, and a triple-click steps through colour temperature.
+
+    **Button_ScriptOnly** fires the button event into the scripting engine without touching the linked channel, giving scripts full control over what happens on press.
+
+    **Button_pd** variants use a pull-down resistor instead of the default pull-up, for hardware wired the other way around.
+  </Accordion>
+
+  <Accordion title="LED and PWM outputs">
+    **LED** is functionally identical to Relay but is listed separately so pin lists remain readable on multi-function devices. It is an active-high digital output linked to a channel.
+
+    **LED_n** inverts the output logic.
+
+    **PWM** is a pulse-width-modulated output used for dimmable lights. The duty cycle tracks the channel value (0–1000 by default). Remember to set the linked channel number to the correct RGBCW index (1–5) so that Home Assistant dimming and colour commands are routed correctly.
+
+    **PWM_n** inverts the duty cycle, which some drivers need when a single PWM controls the ratio between cool and warm white.
+
+    **PWM_ScriptOnly** and **PWM_ScriptOnly_n** expose a PWM pin directly to channel writes and scripts without involving the automatic LED/light generation logic. Use these when you want raw PWM control independent of the RGB/CW system.
+
+    **LED_WIFI** is a special indicator role. Its behaviour is:
+    - **Steady on** — connected to your router in client mode
+    - **0.5 s blink** — connecting or connection problem
+    - **200 ms fast blink** — device is in open access point mode
+
+    **LED_WIFI_n** mirrors LED_WIFI with inverted logic.
+  </Accordion>
+
+  <Accordion title="Digital inputs">
+    **DigitalInput** reads the current logic level on the pin and writes it directly to the linked channel — equivalent to Arduino's `digitalRead()`. An internal pull-up resistor is enabled.
+
+    **DigitalInput_n** inverts the read value before writing it to the channel.
+
+    **DigitalInput_NoPup** and **DigitalInput_NoPup_n** disable the internal pull-up. These are used for sensors such as water sensors and door sensors on XR809 and similar modules that provide their own bias.
+
+    **ToggleChannelOnToggle** fires a toggle on the linked channel whenever the pin changes state (with debouncing). This is ideal for a physical toggle switch: flipping the switch physically toggles the relay state regardless of which direction it moves.
+  </Accordion>
+
+  <Accordion title="ADC (analog to digital)">
+    **ADC** reads the analog voltage on the pin and converts it to a channel value, which is then published over MQTT and available to scripted events. Typical use cases include light-dependent resistors, potentiometers, and analog voltage sensors.
+
+    **BAT_ADC** is the ADC variant used with the Battery driver. It applies battery-specific scaling and exposes the reading as a battery percentage.
+
+    **ADC_Button** maps multiple buttons to a single ADC pin. Each button is wired with a different resistor value, creating a distinct voltage level that the ADCButton driver decodes into individual button events.
+  </Accordion>
+
+  <Accordion title="TuyaMCU serial (TX/RX)">
+    Many Tuya-branded smart devices contain a secondary microcontroller (an "MCU") that handles the high-voltage switching while the BK Wi-Fi module acts purely as a communication bridge. The two chips talk over UART using the TuyaMCU serial protocol. You do not set TX/RX roles in the GPIO pin screen for TuyaMCU — instead, start the TuyaMCU driver and it uses the hardware UART1 (RX1/TX1) by default. The GPIO pin configuration page is only needed for the secondary protocol pins such as BL0937 pulse outputs or I²C-based LED drivers.
+  </Accordion>
+
+  <Accordion title="Energy metering pins (BL0937)">
+    The BL0937 energy-metering chip uses three GPIO lines: **BL0937_SEL**, **BL0937_CF**, and **BL0937_CF1**. Setting all three roles on their respective pins causes the BL0937 driver to start automatically without a `startDriver` command in `autoexec.bat`. After setting the pins, calibrate the readings using the power calibration commands documented in the power metering section.
+
+    **BL0937_SEL_n** is an inverted variant of the SEL pin needed on rare hardware revisions.
+  </Accordion>
+
+  <Accordion title="LED driver I²C buses (SM2135, BP5758D, SM2235, etc.)">
+    Several RGBCW bulbs use a proprietary two-wire protocol (sometimes called "modified I²C") between the BK module and a dedicated LED constant-current driver chip. Setting both the DAT and CLK pin roles for a given driver starts that driver automatically:
+
+    - **SM2135_DAT / SM2135_CLK** — SM2135 driver (autostart on both pins set)
+    - **BP5758D_DAT / BP5758D_CLK** — BP5758D driver (used in some Sonoff bulbs)
+    - **BP1658CJ_DAT / BP1658CJ_CLK** — BP1658CJ driver
+    - **SM2235_DAT / SM2235_CLK** — SM2235 / SM2335 / SM2185N driver
+    - **KP18058_DAT / KP18058_CLK** — KP18058 / KP18068 driver
+
+    After setting both pins, use the driver's `_Map` command (e.g., `SM2135_Map`) to remap the physical channel-to-output wiring if the RGBCW colours appear swapped.
+  </Accordion>
+
+  <Accordion title="Sensor data pins (DHT, SHT3X, DS1820, etc.)">
+    Temperature and humidity sensors that use single-wire or two-wire protocols have dedicated roles that start the matching driver automatically when the role is saved:
+
+    - **DHT11 / DHT12 / DHT21 / DHT22** — single-wire DHT family. Two channel index fields appear when editing the pin: set the first to the channel that will hold temperature and the second to humidity.
+    - **SHT3X_DAT / SHT3X_CLK** — SHT3x humidity and temperature sensor. Driver starts when both pins are set.
+    - **CHT83XX_DAT / CHT83XX_CLK** — CHT8305/8310/8315 I²C sensor. Set channel 1 for temperature, channel 2 for humidity.
+    - **DS1820_IO** — OneWire DS18(B)20 temperature sensor.
+    - **SGP_CLK / SGP_DAT** — SGP air quality sensor.
+
+    Sensor results are written to the linked channel numbers, from where they are published over MQTT and can trigger scripted events.
+  </Accordion>
+
+  <Accordion title="IR send and receive">
+    **IRRecv** designates a pin as the IR receiver input for the IRLibrary port. **IRSend** designates a pin as the IR emitter output. Start the IR driver with `startDriver IR` (or `startDriver IR2` for the Flipper Zero capture format driver) in `autoexec.bat`.
+
+    **IRRecv_nPup** is the IR receive variant without an internal pull-up, for hardware that provides external biasing.
+  </Accordion>
+
+  <Accordion title="Always-high / Always-low outputs">
+    **AlwaysHigh** drives the pin permanently high and **AlwaysLow** drives it permanently low. These are useful for powering small peripherals directly from a GPIO, or for satisfying chip enable lines that need a fixed logic level.
+  </Accordion>
+
+  <Accordion title="Pulse counters">
+    **Counter_f** increments the linked channel value by 1 on each **falling** edge (high-to-low transition). **Counter_r** increments on each **rising** edge (low-to-high transition). Typical uses include counting pulses from flow sensors, gas meters, or water meters.
+  </Accordion>
+</AccordionGroup>
+
+## Finding pin assignments for your device
+
+If your device does not appear in the OpenBeken device database (accessible from the web interface under **Config → Device database**), you will need to identify the GPIO mapping from hardware teardown information. Community teardowns are published on the Elektroda forum and often include annotated PCB photographs with GPIO numbers marked. Once you have the GPIO numbers and their functions, enter each one in the web interface **Config → GPIO** page, selecting the appropriate role from the dropdown.
+
+<Tip>
+Templates saved in the device database encode a full GPIO configuration that can be applied in one click. If your device model or a close variant is listed, applying its template is the fastest way to get a working starting point.
+</Tip>
+
+## Saving and applying changes
+
+After assigning roles in the web interface, click **Save** on the GPIO page. The firmware writes the new configuration to flash and reboots the pin driver subsystem immediately. You do not need to restart the device, but some driver autostart behaviours (such as BL0937 or DHT sensor drivers) only trigger on the next full device boot.
+
+<Warning>
+If you configure a pin role that conflicts with the hardware — for example, assigning a relay role to a pin that is actually a button — you may trigger unexpected relay switching or hold the device in an unresponsive state. If this happens, use safe mode (five rapid power cycles) to connect to the device with pins disabled and correct the configuration. See the [safe mode guide](/configuration/safe-mode) for the recovery procedure.
+</Warning>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Channel types" icon="sliders" href="/configuration/channel-types">
+    Control how channel values are displayed and scaled in the web interface.
+  </Card>
+  <Card title="Driver system overview" icon="puzzle" href="/configuration/drivers-overview">
+    Start additional drivers such as TuyaMCU, BL0942, NTP, and IR from autoexec.bat.
+  </Card>
+  <Card title="Safe mode and recovery" icon="shield" href="/configuration/safe-mode">
+    Recover from a bad pin configuration using the safe mode power-cycle procedure.
+  </Card>
+  <Card title="IO roles reference" icon="list" href="/reference/io-roles">
+    Complete listing of every available IO role name and its description.
+  </Card>
+</CardGroup>

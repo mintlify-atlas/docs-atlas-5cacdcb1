@@ -1,0 +1,142 @@
+---
+title: "OpenBeken configuration flags reference"
+description: "Complete reference for all OpenBeken bit-flags, covering MQTT broadcasting, LED behavior, button timing, UART routing, Home Assistant discovery, and WiFi options."
+---
+
+Flags are single-bit configuration options stored in the device's flash configuration. Each flag is identified by a numeric index and controls a specific aspect of firmware behavior. You can set flags through the web interface at **Options → General Flags**, or from the console using the `SetFlag` command. Flags persist across reboots.
+
+## Setting flags
+
+<Tabs>
+  <Tab title="Console">
+    ```bash
+    SetFlag 12 1   # enable flag 12 (remember LED state)
+    SetFlag 12 0   # disable flag 12
+    ```
+  </Tab>
+  <Tab title="MQTT">
+    ```bash
+    # Topic: cmnd/OBK_DEVICE/SetFlag
+    # Payload: 12 1
+    ```
+  </Tab>
+  <Tab title="HTTP">
+    ```
+    http://192.168.0.x/cm?cmnd=SetFlag%2012%201
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  You can also set all flags at once as a bitmask integer using the `flags [IntegerValue]` command, but using `SetFlag` for individual flags is safer and more readable.
+</Note>
+
+## MQTT flags
+
+These flags control what the device publishes over MQTT and when.
+
+| ID | Description |
+|----|-------------|
+| 0 | **[MQTT] Broadcast LED params together** — publish `led_basecolor_rgb` and `led_dimmer` together when either changes. Topics: `YourDevName/led_basecolor_rgb/get`, `YourDevName/led_dimmer/get` |
+| 1 | **[MQTT] Broadcast LED final color** — publish the final rendered color. Topic: `YourDevName/led_finalcolor_rgb/get` |
+| 2 | **[MQTT] Broadcast self state every N seconds** — periodic self-broadcast (default: 60 s). Interval configurable with `mqtt_broadcastInterval` and `mqtt_broadcastItemsPerSec` |
+| 7 | **[MQTT][Debug] Always set Retain flag** — force all published values to use the MQTT retain flag |
+| 10 | **[MQTT] Broadcast self state on MQTT connect** — immediately publish state when the MQTT connection is established |
+| 16 | **[MQTT] Broadcast LED final color RGBCW** — publish the full RGBCW final color. Topic: `YourDevName/led_finalcolor_rgbcw/get` |
+| 19 | **[MQTT] Always publish TuyaMCU channels** — force-publish all channels linked to TuyaMCU dpIDs |
+| 21 | **[MQTT] Retain power channels** — set the retain flag on relay/power channel publishes |
+| 30 | **[MQTT] Enable Tasmota TELE publishes** — publish `tele/DEVICE/STATE`, `tele/DEVICE/SENSOR`, and `stat/DEVICE/RESULT` for ioBroker and similar integrations |
+| 33 | **[MQTT] Apply channel type multiplier before publishing** — apply the channel type multiplier to the value before publishing |
+| 34 | **[MQTT] Add relays as lights in HA discovery** — registers relay channels as `light` entities instead of `switch` in Home Assistant |
+| 39 | **[MQTT][Debug] Publish all channels** — publishes all 64 possible channels on connect. Do not enable in production. |
+| 40 | **[MQTT] Use kWh for energy** — report energy consumption in kWh instead of Wh |
+| 43 | **[TuyaMCU] Use queue** — buffer TuyaMCU sends in a queue |
+| 45 | **[MQTT Discovery] Don't merge toggles and dimmers into lights** |
+| 50 | **[MQTT] Never add GET suffix** — omit the `/get` suffix from all published topics |
+
+## LED flags
+
+These flags modify how the LED driver behaves, including rendering mode, brightness memory, and hardware-specific options.
+
+| ID | Description |
+|----|-------------|
+| 3 | **[LED][Debug] Show raw PWM controller** — display raw PWM sliders on the web index instead of the full LED RGB/CW picker |
+| 4 | **[LED] Force show RGBCW controller** — always show the full RGBCW picker (for SM2135 LEDs or DGR sender setups) |
+| 8 | **[LED] Alternate CW light mode** — first PWM controls warm/cold, second controls brightness (instead of standard mapping) |
+| 9 | **[SM2135] Use separate RGB/CW modes** — write RGB and CW values separately instead of all 5 channels at once |
+| 12 | **[LED] Remember LED state after reboot** — restore RGBCW color, enable state, brightness, and temperature on power-on |
+| 17 | **[LED] Auto-enable light on WWW changes** — automatically turn the light on when brightness, color, or temperature is changed from the web panel |
+| 18 | **[LED] Smooth color transitions** *(experimental)* — enable interpolated color transitions |
+| 20 | **[LED] Force RGB mode** — use only 3 PWMs for RGB and ignore additional PWMs |
+| 23 | **[LED] Auto-enable light on any change** — turn the light on automatically on any brightness, color, or temperature change |
+| 24 | **[LED] Emulate cool white with RGB** — on devices with 4 PWMs (R, G, B, Warm), simulate cool white using the RGB channels |
+| 28 | **[LED] RGB white enables temperature mode** — setting color to `FFFFFF` switches to temperature mode automatically |
+| 32 | **[LED] Use old linear brightness** — disable gamma correction and use a linear brightness ramp |
+
+## Button flags
+
+| ID | Description |
+|----|-------------|
+| 6 | **[BTN] Instant touch reaction** — fire the button action immediately on contact rather than waiting for release (equivalent to Tasmota `SetOption 13`) |
+| 41 | **[BTN] Ignore all button events** — child lock; disables all physical button input |
+
+## UART flags
+
+| ID | Description |
+|----|-------------|
+| 26 | **[UART] Use alternate UART** — route BL0942, CSE, TuyaMCU, etc. to the secondary UART port |
+| 31 | **[UART] Enable UART command line** — accept console commands on the UART port |
+
+## Home Assistant flags
+
+| ID | Description |
+|----|-------------|
+| 27 | **[HASS] Invoke discovery on IP/config change** — re-run Home Assistant MQTT discovery when the device IP address or configuration changes |
+| 35 | **[HASS] Deactivate avty_t flag** — remove the availability topic from HA discovery messages, which keeps entities available even when the device is offline. Requires restarting HA discovery to take effect. |
+
+## PWM flags
+
+| ID | Description |
+|----|-------------|
+| 11 | **[PWM] BK7231 use 600 Hz** — change the default PWM frequency from 1 kHz to 600 Hz on BK7231 chips |
+
+## Driver flags
+
+| ID | Description |
+|----|-------------|
+| 36 | **[DRV] Deactivate autostart of all drivers** — prevent all drivers from starting automatically at boot |
+
+## WiFi flags
+
+| ID | Description |
+|----|-------------|
+| 29 | **[NETIF] Use short device name as hostname** — use the short name (MQTT topic prefix) as the network hostname instead of the full friendly name |
+| 37 | **[WiFi] Quick connect on reboot** — attempt fast WiFi reconnect using cached AP data |
+| 51 | **[WiFi] Enhanced fast connect** — save AP data to flash for even faster reconnection (recommended with flag 37 and a static IP). Reset 3 times quickly to connect normally if needed. |
+
+## Power metering flags
+
+| ID | Description |
+|----|-------------|
+| 25 | **[POWER] Allow negative current/power** — do not reject negative readings from BL0937, BL0942, and other power chips |
+| 38 | **[Power] Zero power when all relays open** — force current and power readings to zero when every relay is in the open state |
+| 48 | **[PWR] Invert AC direction** |
+
+## Other flags
+
+| ID | Description |
+|----|-------------|
+| 5 | **[CMD] Enable TCP console command server** — open a TCP socket for PuTTY or similar terminal connections |
+| 13 | **[HTTP] Show actual PIN logic level** — show the current logic level for unconfigured GPIO pins on the web interface |
+| 14 | **[IR] MQTT publish raw IR** — publish incoming IR signals as a raw string over MQTT |
+| 15 | **[IR] Allow unknown IR protocol** — do not filter out unrecognized IR protocols |
+| 22 | **[IR] MQTT publish IR as Tasmota JSON** — publish incoming IR data in Tasmota JSON format |
+| 42 | **[DoorSensor] Invert state** — invert the logical state of the door sensor reading |
+| 44 | **[HTTP] Disable auth in safe mode** — disable authentication when in safe mode (not recommended) |
+| 46 | **[TuyaMCU] Store raw data** — keep raw TuyaMCU packet data |
+| 47 | **[TuyaMCU] Store ALL data** — store all TuyaMCU data points regardless of mapping |
+| 49 | **[HTTP] Hide ON/OFF for relays** — show only colored buttons (no explicit ON/OFF label) for relay channels |
+
+<Tip>
+  Commonly used flags for a typical relay/LED setup are **flag 2** (periodic MQTT broadcast), **flag 10** (publish on connect), and **flag 12** (remember LED state). For Home Assistant users, also enable **flag 27** to trigger rediscovery on config changes.
+</Tip>

@@ -1,0 +1,281 @@
+---
+title: "Energy monitoring with OpenBeken power metering"
+description: "Set up BL0942, BL0937, CSE7766, and BL0942SPI power metering chips, calibrate readings, publish data over MQTT, and automate actions based on power events."
+---
+
+OpenBeken supports a range of energy monitoring chips found in smart plugs and in-wall switches. Once a driver is running, the device continuously measures voltage, current, power, and cumulative energy consumption, then publishes those values over MQTT. Readings can also trigger automation rules using `AddChangeHandler`, making it straightforward to implement overload protection or appliance-state detection without a separate home automation hub.
+
+## Supported chips
+
+<CardGroup cols={2}>
+  <Card title="BL0942" icon="bolt">
+    UART-based power meter, common in BK7231T/N smart plugs. Connects to the TX1/RX1 UART port. Default baud rate is 4800; supports 9600 with an argument.
+  </Card>
+  <Card title="BL0942SPI" icon="bolt">
+    SPI variant of BL0942, used in devices like the PZIOT-E01. Connects to the SPI1 port instead of UART.
+  </Card>
+  <Card title="BL0937" icon="bolt">
+    GPIO-based power meter using a pulse-counting protocol. Requires three GPIO pins: CF, CF1, and SEL. No UART needed.
+  </Card>
+  <Card title="CSE7766" icon="bolt">
+    UART-based power meter, connected to TX1/RX1 on BK chips. Common in some Sonoff and Gosund devices.
+  </Card>
+</CardGroup>
+
+<Note>
+All power metering drivers share the same calibration commands (`PowerSet`, `VoltageSet`, `CurrentSet`) and publish to the same MQTT topic structure. The difference is only in how you start the driver and which GPIO pins or UART port it uses.
+</Note>
+
+## Starting a power metering driver
+
+Add the `startDriver` call to your **autoexec.bat** (via the LittleFS tab in the web UI) or to the short startup command in the device config.
+
+<Tabs>
+  <Tab title="BL0942 (UART)">
+    ```bash
+    startDriver BL0942
+    ```
+
+    To use 9600 baud instead of the default 4800:
+
+    ```bash
+    startDriver BL0942 9600
+    ```
+
+    BL0942 uses UART1 (TX1/RX1) by default. If your device uses UART2, enable Flag 26 before starting the driver:
+
+    ```bash
+    SetFlag 26 1
+    startDriver BL0942
+    ```
+
+    To run two BL0942 chips simultaneously (one on each UART), use the `BL0942opts` command:
+
+    ```bash
+    BL0942opts 3
+    startDriver BL0942
+    ```
+  </Tab>
+  <Tab title="BL0942SPI">
+    ```bash
+    startDriver BL0942SPI
+    ```
+
+    The SPI variant automatically uses the hardware SPI1 port. No additional pin configuration is needed beyond connecting the chip to the SPI pins.
+  </Tab>
+  <Tab title="BL0937 (GPIO)">
+    BL0937 requires three GPIO pins configured in the pin role panel before starting the driver:
+
+    - **CF** — power frequency pulse output
+    - **CF1** — current/voltage selection pulse output
+    - **SEL** — multiplexer select input
+
+    Assign these roles to the correct pins in the GPIO configuration, then start the driver:
+
+    ```bash
+    startDriver BL0937
+    ```
+  </Tab>
+  <Tab title="CSE7766 (UART)">
+    ```bash
+    startDriver CSE7766
+    ```
+
+    CSE7766 also uses UART1 (TX1/RX1). As with BL0942, set Flag 26 to use UART2 if needed.
+  </Tab>
+</Tabs>
+
+## Calibration
+
+Raw readings from power metering chips are not accurate without calibration. The chip outputs raw ADC counts that must be scaled to real-world values. Calibration multipliers are calculated from a single reference measurement and are **automatically saved to flash** — you only need to calibrate once.
+
+<Steps>
+  <Step title="Connect a known reference load">
+    Plug in a resistive load with a known power draw (an incandescent bulb or a resistive space heater works well). Measure the actual voltage, current, and power with a trusted external meter.
+  </Step>
+  <Step title="Set voltage calibration">
+    Enter the measured voltage in volts:
+
+    ```bash
+    VoltageSet 230.5
+    ```
+  </Step>
+  <Step title="Set current calibration">
+    Enter the measured current in amps:
+
+    ```bash
+    CurrentSet 0.435
+    ```
+  </Step>
+  <Step title="Set power calibration">
+    Enter the measured active power in watts:
+
+    ```bash
+    PowerSet 100.2
+    ```
+  </Step>
+  <Step title="Verify readings">
+    Use `GetReadings` to print the current values to the console and confirm they match your reference meter:
+
+    ```bash
+    GetReadings
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Calibrate with a purely resistive load. Reactive loads (motors, switch-mode power supplies) introduce a power factor that makes calibration imprecise.
+</Warning>
+
+### Filtering out-of-range values
+
+Use `PowerMax` to discard readings above a physical maximum, which prevents erroneous spikes from affecting your data:
+
+```bash
+PowerMax 3600
+```
+
+A moving average smooths out noise in current and power readings. The argument is the number of samples to average:
+
+```bash
+setMovingAvg 5
+```
+
+### MQTT publish threshold
+
+By default, OpenBeken publishes a new power reading any time the value changes. On noisy power supplies this can flood your MQTT broker. Set a minimum delta before a new reading is published:
+
+```bash
+VCPPublishThreshold 0.5 0.02 1.0
+```
+
+The three arguments are voltage delta (V), current delta (A), and power delta (W). Additional optional arguments cover energy (Wh) and frequency (Hz).
+
+## MQTT topics
+
+Once a power metering driver is running, OpenBeken publishes readings to MQTT automatically. The topic prefix is your device's short name (e.g., `obkABCD1234`).
+
+| Topic | Unit | Description |
+|-------|------|-------------|
+| `obkABCD1234/voltage/get` | V | RMS mains voltage |
+| `obkABCD1234/current/get` | A | RMS load current |
+| `obkABCD1234/power/get` | W | Active power |
+| `obkABCD1234/energy/get` | Wh | Cumulative energy (session) |
+| `obkABCD1234/last_hour/get` | Wh | Energy consumed in the last hour |
+| `obkABCD1234/today/get` | Wh | Energy consumed today |
+
+<Note>
+Enable Flag 40 to publish energy values in kWh instead of Wh:
+
+```bash
+SetFlag 40 1
+```
+</Note>
+
+### Tasmota-compatible TELE publishes
+
+Enable Flag 30 to also publish in Tasmota's TELE JSON format, which is required for some integrations like ioBroker:
+
+```bash
+SetFlag 30 1
+```
+
+Configure the publish interval with `TasTeleInterval`:
+
+```bash
+TasTeleInterval 10 60
+```
+
+The first argument is the sensor interval (energy readings), the second is the state interval, both in seconds.
+
+## Energy consumption tracking
+
+The cumulative energy counter persists across reboots. Reset it with `EnergyCntReset`:
+
+```bash
+EnergyCntReset
+EnergyCntReset 0
+```
+
+### Auto-save threshold
+
+The energy counter is saved to flash periodically. `ConsumptionThreshold` sets the minimum change (in Wh) that triggers a save. This prevents too-frequent flash writes while ensuring data is not lost on unexpected power cuts:
+
+```bash
+ConsumptionThreshold 5
+```
+
+A value of `5` saves the counter every 5 Wh of consumption. Valid range is 1–100.
+
+## Automation with AddChangeHandler
+
+`AddChangeHandler` watches power meter variables and executes a command when a threshold is crossed. This runs entirely on-device without requiring MQTT or a hub.
+
+Variable names for power meter values:
+- `Voltage` — mains voltage in volts (integer)
+- `Current` — load current × 1000 (so 1.5 A = 1500)
+- `Power` — active power in watts (integer)
+- `Frequency` — mains frequency × 100 (so 50 Hz = 5000)
+
+### Example: overload protection
+
+Turn off the relay if power exceeds 2300 W:
+
+```bash
+AddChangeHandler Power > 2300 SetChannel 1 0
+```
+
+### Example: current-based appliance detection
+
+Detect when a washing machine draws more than 200 mA (current > 200):
+
+```bash
+AddChangeHandler Current > 200 publish cmnd/homeassistant/notify washing_machine_running
+```
+
+### Example: turn off relay on power drop
+
+Shut off the relay if the load drops below 5 W (appliance finished):
+
+```bash
+AddChangeHandler Power < 5 SetChannel 1 0
+```
+
+<Note>
+Current values passed to `AddChangeHandler` are multiplied by 1000. A check for `Current > 2000` means the current exceeds 2.0 A.
+</Note>
+
+## Flags for power metering
+
+| Flag | Description |
+|------|-------------|
+| 25 | Allow negative current and power readings (for all chips: BL0937, BL0942, etc.) |
+| 26 | Use alternate UART (UART2) for BL0942, CSE7766, TuyaMCU, etc. |
+| 38 | Set power and current to zero when all relays are open |
+| 40 | Publish energy values in kWh instead of Wh |
+
+Enable or disable flags with `SetFlag`:
+
+```bash
+SetFlag 25 1
+SetFlag 38 1
+```
+
+Flag 25 is useful for bi-directional energy meters (solar inverters feeding back to the grid), where negative power readings are physically meaningful.
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="GPIO pin configuration" icon="cpu" href="/configuration/gpio-pins">
+    Assign CF, CF1, and SEL roles for BL0937, or UART roles for BL0942/CSE7766.
+  </Card>
+  <Card title="MQTT setup" icon="radio" href="/connectivity/mqtt-setup">
+    Configure MQTT broker credentials and topic prefixes.
+  </Card>
+  <Card title="Scripting overview" icon="code" href="/scripting/overview">
+    Use scripts alongside AddChangeHandler for more complex automation.
+  </Card>
+  <Card title="Flags reference" icon="flag" href="/reference/flags">
+    Complete list of flags including all power metering options.
+  </Card>
+</CardGroup>

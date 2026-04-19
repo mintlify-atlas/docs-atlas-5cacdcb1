@@ -1,0 +1,179 @@
+---
+title: "Channel types and display modes in OpenBeken"
+description: "Channel types tell the web interface how to display and scale each value — as a toggle, dimmer, sensor reading, or power-metering figure. Required for TuyaMCU devices."
+---
+
+OpenBeken exposes up to 32 numbered **channels**, each of which is simply an integer variable. A channel has no inherent meaning on its own — a relay driver reads channel 1 and closes its output when the value is `1`; a PWM driver reads channel 3 and sets its duty cycle accordingly. What a channel **represents** to a human — whether it is an on/off toggle, a percentage dimmer, a temperature in tenths of a degree, or a power reading in watts — is determined by its **channel type**.
+
+Channel types serve two purposes: they control the UI widget shown on the main web panel for that channel (toggle button, slider, text field, read-only label, radio buttons), and they instruct the firmware how to scale or format the raw integer value before displaying it. For example, a TuyaMCU device that sends temperature as an integer multiplied by 10 (so 254 means 25.4 °C) needs the `Temperature_div10` channel type so the display shows `25.4` instead of `254`.
+
+## Setting channel types
+
+Open **Config → Channel config** in the web interface. Each channel row shows its current type in a dropdown. Select the type that matches what the channel is used for and click **Save**. The main page updates immediately to show the new widget.
+
+<Note>
+You only need to set channel types for channels that are actually in use. Unused channels with the **Default** type are not displayed on the main page.
+</Note>
+
+## General-purpose types
+
+<Tabs>
+  <Tab title="Toggle and relay">
+    | Type | Description |
+    |------|-------------|
+    | `Default` | The standard on/off channel for relays and simple switches. A **Default** channel with a non-zero value shows as ON; zero shows as OFF. This is the correct type for almost all relay and switch channels on non-TuyaMCU devices. |
+    | `Toggle` | Like Default, but the toggle widget is always shown even if the channel is currently zero. Useful for channels you always want to be visible and interactive. |
+    | `Toggle_Inv` | Like Toggle but the displayed ON/OFF state is inverted — the widget shows ON when the channel value is `0`. |
+    | `ReadOnly` | Displays the raw integer value as a read-only label. You can still write to the channel from scripts or console commands; it just cannot be changed from the web panel UI. |
+  </Tab>
+
+  <Tab title="Dimmers and sliders">
+    | Type | Description |
+    |------|-------------|
+    | `Dimmer` | Shows a 0–100 range slider. The slider value is written to the channel. Use this for TuyaMCU dimmers, or for anything you want to map to a 0–100 percent scale. |
+    | `Dimmer256` | Like Dimmer but uses a 0–255 range. Suitable for 8-bit PWM dimmers accessed through TuyaMCU. |
+    | `Dimmer1000` | Like Dimmer but uses a 0–1000 range, matching the native PWM resolution used by OpenBeken's LED system. |
+    | `OffDimBright` | A three-option radio button for lighting: Off, Dim, and Bright. |
+  </Tab>
+
+  <Tab title="Multi-state radio buttons">
+    | Type | Description |
+    |------|-------------|
+    | `LowMidHigh` | Three-state radio (0, 1, 2). Used for fan speed or similar three-level controls on TuyaMCU devices. |
+    | `LowMidHighHighest` | Four-state radio (0–3). |
+    | `OffLowMidHigh` | Four-state radio starting from Off (0–3). Some TuyaMCU fans use this. |
+    | `OffLowMidHighHighest` | Five-state radio (0–4). |
+    | `OffLowestLowMidHighHighest` | Six-state radio (0–5). |
+    | `LowestLowMidHighHighest` | Five-state radio without an explicit Off state. |
+    | `ReadOnlyLowMidHigh` | Read-only version of LowMidHigh — shows the label but does not allow changes from the web panel. |
+    | `OffOnRemember` | Three radio buttons: Off, On, and Remember. Used for TuyaMCU power-memory state channels. |
+  </Tab>
+
+  <Tab title="Text and timers">
+    | Type | Description |
+    |------|-------------|
+    | `TextField` | A free-text input field. You can type any value. Used for time countdown on TuyaMCU devices. |
+    | `TimerSeconds` | Displays a raw seconds integer formatted as hours, minutes, and seconds. |
+    | `ReadOnly` | Prints the raw value as a label. |
+    | `ReadOnly_div10` | Read-only label, value divided by 10 before display. |
+    | `ReadOnly_div100` | Read-only label, value divided by 100 before display. |
+    | `ReadOnly_div1000` | Read-only label, value divided by 1000 before display. |
+  </Tab>
+</Tabs>
+
+## Sensor channel types
+
+Use these types when a pin role (DHT22, SHT3X, CHT83XX, etc.) writes sensor readings to a channel, or when TuyaMCU forwards sensor data from an external MCU.
+
+| Type | Display |
+|------|---------|
+| `Temperature` | Integer temperature in degrees Celsius, read-only. |
+| `Temperature_div10` | Temperature from TuyaMCU — raw value divided by 10. `254` displays as `25.4 °C`. |
+| `Temperature_div100` | Temperature divided by 100. |
+| `Temperature_div2` | Temperature multiplied by 0.5 (divide-by-2 equivalent). |
+| `Humidity` | Integer humidity in percent, read-only. |
+| `Humidity_div10` | Humidity from TuyaMCU — raw value divided by 10. `554` displays as `55.4 %`. If you want the multiplied raw value published to MQTT instead of the divided display value, enable the relevant MQTT flag in **General options**. |
+| `Illuminance` | Illuminance in lux. |
+| `Illuminance_div10` | Illuminance divided by 10 before display. |
+| `SmokePercent` | Smoke concentration as a percentage. |
+| `OpenClosed` | Displays `Open` or `Closed` based on channel value. Suitable for door and window sensors. |
+| `OpenClosed_Inv` | Like OpenClosed with values inverted. |
+| `BatteryLevelPercent` | Displays the value as a battery level percentage. |
+| `Motion` | Motion presence indicator. |
+| `Motion_n` | Motion presence with inverted logic. |
+| `Ph` | pH water quality reading. |
+| `Orp` | ORP water quality reading. |
+| `Tds` | TDS water quality reading. |
+| `Pressure_div100` | Atmospheric pressure in hPa, raw value divided by 100. |
+
+## TuyaMCU power metering types
+
+When a TuyaMCU device (or an external MCU) sends power-metering data, it transmits raw integers because the TuyaMCU protocol carries no floating-point values. The following channel types apply the correct divisors so that readings display correctly on the web panel and are published with the right units over MQTT.
+
+<Note>
+These types are **not** used for direct hardware power-metering chips such as BL0942, BL0937, or CSE7766. Those chips have their own drivers that handle scaling internally. Use these types only for TuyaMCU data point channels.
+</Note>
+
+| Type | Divisor | Typical use |
+|------|---------|-------------|
+| `Voltage_div10` | ÷10 | Mains voltage — TuyaMCU sends `2310` for 231.0 V |
+| `Voltage_div100` | ÷100 | Mains voltage — TuyaMCU sends `23100` for 231.00 V |
+| `Current_div100` | ÷100 | Current in amps — TuyaMCU sends `150` for 1.50 A |
+| `Current_div1000` | ÷1000 | Current in amps — TuyaMCU sends `1500` for 1.500 A |
+| `Current_div10` | ÷10 | Current in amps |
+| `Power` | ×1 | Active power in watts, integer |
+| `Power_div10` | ÷10 | Power with one decimal place |
+| `Power_div100` | ÷100 | Power with two decimal places |
+| `ActivePower` | ×1 | Active power (alternative label) |
+| `ReactivePower` | ×1 | Reactive power in VAr |
+| `PowerFactor_div1000` | ÷1000 | Power factor — TuyaMCU sends `950` for 0.950 |
+| `PowerFactor_div100` | ÷100 | Power factor |
+| `Frequency` | ×1 | AC frequency in Hz |
+| `Frequency_div10` | ÷10 | Frequency with one decimal place |
+| `Frequency_div100` | ÷100 | Frequency — TuyaMCU sends `5000` for 50.00 Hz |
+| `Frequency_div1000` | ÷1000 | Frequency with three decimal places |
+| `EnergyTotal_kWh_div1000` | ÷1000 | Total energy in kWh — TuyaMCU sends `1234` for 1.234 kWh |
+| `EnergyTotal_kWh_div100` | ÷100 | Total energy in kWh |
+| `EnergyToday_kWh_div1000` | ÷1000 | Today's energy in kWh |
+| `EnergyExport_kWh_div1000` | ÷1000 | Exported energy in kWh |
+| `EnergyImport_kWh_div1000` | ÷1000 | Imported energy in kWh |
+| `LeakageCurrent_div1000` | ÷1000 | Leakage current in mA |
+
+## Custom enum types
+
+Two special channel types allow you to define a mapping between integer values and human-readable string labels:
+
+**`Enum`** — Creates a selectable dropdown on the web panel. Use the `SetChannelEnum` command to define the label mapping. This is ideal for TuyaMCU data points that represent modes (for example: `0=Normal`, `1=Eco`, `2=Turbo`).
+
+**`ReadOnlyEnum`** — Like Enum but the channel is read-only in the web panel; the value can still be updated by TuyaMCU or scripts.
+
+```bash
+# Example: define labels for channel 4 (a three-mode fan speed)
+SetChannelEnum 4 0=Off 1=Low 2=High
+```
+
+## RGBCW channel ordering
+
+When using PWM outputs or I²C LED driver chips for colour lights, channels 1–5 are reserved for RGBCW in this order:
+
+<CardGroup cols={2}>
+  <Card title="Channel 1 — Red" icon="circle">
+    First PWM output. Set this pin's PWM role and link it to channel 1.
+  </Card>
+  <Card title="Channel 2 — Green" icon="circle">
+    Second PWM output, linked to channel 2.
+  </Card>
+  <Card title="Channel 3 — Blue" icon="circle">
+    Third PWM output, linked to channel 3.
+  </Card>
+  <Card title="Channel 4 — Cool white" icon="circle">
+    Fourth output for cool white LEDs, linked to channel 4.
+  </Card>
+  <Card title="Channel 5 — Warm white" icon="circle">
+    Fifth output for warm white LEDs, linked to channel 5.
+  </Card>
+  <Card title="Remapping" icon="arrow-left-right" href="/advanced/led-lighting">
+    If your hardware wires colours in a different order, use the driver's Map command to reorder them without rewiring.
+  </Card>
+</CardGroup>
+
+<Tip>
+For CW-only (cool white and warm white) lights, only set channels 4 and 5. You do not need to configure the Red, Green, and Blue channels if no RGB LEDs are present.
+</Tip>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="GPIO pin roles" icon="cpu" href="/configuration/gpio-pins">
+    Assign roles to physical pins and link them to channel numbers.
+  </Card>
+  <Card title="LED lighting" icon="lightbulb" href="/advanced/led-lighting">
+    Full guide to RGBCW lighting, channel mapping, and colour control.
+  </Card>
+  <Card title="Power metering" icon="bolt" href="/advanced/power-metering">
+    BL0942, BL0937, and CSE7766 hardware power-metering setup.
+  </Card>
+  <Card title="Driver system overview" icon="puzzle" href="/configuration/drivers-overview">
+    How to start TuyaMCU and other drivers that populate channel values.
+  </Card>
+</CardGroup>

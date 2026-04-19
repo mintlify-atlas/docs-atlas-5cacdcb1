@@ -1,0 +1,166 @@
+---
+title: "Integrate OpenBeken with Home Assistant"
+description: "Add OpenBeken devices to Home Assistant using MQTT auto-discovery or manual YAML configuration, with support for lights, relays, and sensor entities."
+---
+
+OpenBeken integrates with Home Assistant entirely over MQTT — no custom component, no Hass.io add-on, and no cloud account required. You can register your devices in seconds using the built-in MQTT auto-discovery mechanism, or write your own YAML configuration for full control over entity naming, icons, and grouping. Both methods are available from the device web interface under **Config → Generate Home Assistant cfg**.
+
+## Prerequisites
+
+Before you begin, make sure:
+
+- OpenBeken is connected to your MQTT broker (see [MQTT setup](/connectivity/mqtt-setup)).
+- Home Assistant has the [MQTT integration](https://www.home-assistant.io/integrations/mqtt/) enabled and pointed at the same broker.
+- The `discovery_prefix` in Home Assistant's MQTT integration config matches the prefix OpenBeken uses (default: `homeassistant`).
+
+<Note>
+  To check or change the discovery prefix in Home Assistant, go to **Settings → Devices & Services → MQTT → Configure** and look for the **Discovery prefix** field.
+</Note>
+
+## Method 1: MQTT auto-discovery
+
+Auto-discovery is the fastest way to get your device into Home Assistant. OpenBeken sends a single discovery message for each entity (switch, light, sensor), and Home Assistant picks them up automatically.
+
+<Steps>
+  <Step title="Open the HA configuration page">
+    In the OpenBeken web interface, go to **Config → Generate Home Assistant cfg**. You will see a preview of the entities that will be discovered based on your current GPIO and channel configuration.
+  </Step>
+  <Step title="Start discovery">
+    Click **Start Home Assistant Discovery**. OpenBeken publishes one MQTT discovery message per entity to the `homeassistant/` prefix. Home Assistant receives these messages and registers the entities immediately.
+  </Step>
+  <Step title="Check Home Assistant">
+    Open Home Assistant and go to **Settings → Devices & Services → MQTT**. Your OpenBeken device should appear with all its entities listed. If you configured a relay, it shows as a switch. If you configured an RGBCW LED driver, it shows as a light with color and brightness controls.
+  </Step>
+  <Step title="Assign to a room (optional)">
+    In Home Assistant, click the device entry and use **Add to area** to assign it to a room. Entity names and device names come from the client name you set in the OpenBeken MQTT config.
+  </Step>
+</Steps>
+
+<Warning>
+  Discovery is currently implemented for lights, relays, and simple sensor entities. Complex or custom channel types may not produce a discovery message. For those, use the manual YAML method below or edit the generated YAML before pasting it into Home Assistant.
+</Warning>
+
+## Method 2: Manual YAML configuration
+
+If you prefer full control over the entity definition, copy the generated YAML from the **Config → Generate Home Assistant cfg** page and paste it into your Home Assistant `configuration.yaml` (or a dedicated `mqtt.yaml` file if you use `!include`).
+
+### Simple relay (switch)
+
+```yaml
+mqtt:
+  switch:
+    - name: "Living room plug"
+      unique_id: "obk_plug1_relay1"
+      state_topic: "obk_plug1/1/get"
+      command_topic: "obk_plug1/1/set"
+      payload_on: "1"
+      payload_off: "0"
+      availability_topic: "obk_plug1/connected"
+      payload_available: "online"
+```
+
+### RGBCW light
+
+```yaml
+mqtt:
+  light:
+    - name: "Bedroom strip"
+      unique_id: "obk_ledstrip_light"
+      availability_topic: "obk_ledstrip/connected"
+      payload_available: "online"
+      state_topic: "obk_ledstrip/led_enableAll/get"
+      command_topic: "obk_ledstrip/led_enableAll/set"
+      payload_on: "1"
+      payload_off: "0"
+      brightness_state_topic: "obk_ledstrip/led_dimmer/get"
+      brightness_command_topic: "obk_ledstrip/led_dimmer/set"
+      brightness_scale: 100
+      rgb_state_topic: "obk_ledstrip/led_basecolor_rgb/get"
+      rgb_command_topic: "cmnd/obk_ledstrip/led_basecolor_rgb"
+      rgb_value_template: >-
+        {% set r = value[0:2]|int(base=16) %}
+        {% set g = value[2:4]|int(base=16) %}
+        {% set b = value[4:6]|int(base=16) %}
+        {{ r }},{{ g }},{{ b }}
+      rgb_command_template: >-
+        {{ '%02X%02X%02X' | format(red, green, blue) }}
+```
+
+<Tip>
+  OpenBeken publishes LED color as a 6-character hex string (e.g. `FF4400`). The Jinja2 templates above handle the conversion to and from Home Assistant's `R,G,B` integer format.
+</Tip>
+
+### Energy sensor (power meter)
+
+```yaml
+mqtt:
+  sensor:
+    - name: "Plug power"
+      unique_id: "obk_plug1_power"
+      state_topic: "obk_plug1/1/get"
+      unit_of_measurement: "W"
+      device_class: power
+```
+
+## Auto-re-discovery on IP change
+
+Enable **Flag 27** (`[HASS] Invoke HomeAssistant discovery on change to IP address, configuration`) to have OpenBeken automatically re-send discovery messages whenever its IP address changes or its configuration is updated. This is useful in networks where the device may not always receive the same DHCP lease.
+
+```text
+Flag 27 — [HASS] Invoke HomeAssistant discovery on change to IP address, configuration
+```
+
+You can set this flag in **Config → Flags**, or from the MQTT command line:
+
+```text
+cmnd/obk_plug1/SetFlag  →  27 1
+```
+
+## Adding relays as lights
+
+By default, relay channels discovered by OpenBeken appear as **switches** in Home Assistant. If you prefer them to appear as **lights** (useful for wall dimmers or LED controllers wired through a relay), enable **Flag 34**:
+
+```text
+Flag 34 — [MQTT] In HA discovery, add relays as lights
+```
+
+After enabling the flag, click **Start Home Assistant Discovery** again to re-register the entities with the updated device class.
+
+## Availability tracking
+
+OpenBeken publishes `online` to `OBK_DEV_NAME/connected` when it connects to the broker. Home Assistant uses this as the availability topic, so entities automatically show as **unavailable** when the device is offline or loses WiFi.
+
+To disable the availability topic in discovery messages (so entities remain in their last known state when the device goes offline rather than showing unavailable), enable **Flag 35**:
+
+```text
+Flag 35 — [HASS] Deactivate avty_t flag when publishing to HASS
+```
+
+<Note>
+  You must click **Start Home Assistant Discovery** again after toggling Flag 35 for the change to take effect in Home Assistant.
+</Note>
+
+## Merging toggles and dimmers into lights
+
+By default, OpenBeken's discovery logic merges a toggle channel and a dimmer channel into a single light entity when they share the same physical output. If you prefer them to appear as separate entities, enable **Flag 45**:
+
+```text
+Flag 45 — [MQTT Discovery] Don't merge toggles and dimmers into lights
+```
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="MQTT setup" icon="broadcast-tower" href="/connectivity/mqtt-setup">
+    Configure the MQTT broker connection, topic structure, and broadcast flags.
+  </Card>
+  <Card title="TCP server" icon="terminal" href="/connectivity/tcp-server">
+    Run console commands remotely over a raw TCP connection without HTTP.
+  </Card>
+  <Card title="Flags reference" icon="flag" href="/reference/flags">
+    Full list of all configurable flags with IDs and descriptions.
+  </Card>
+  <Card title="MQTT topics reference" icon="list" href="/reference/mqtt-topics">
+    Complete table of every topic OpenBeken publishes and subscribes to.
+  </Card>
+</CardGroup>

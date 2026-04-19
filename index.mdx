@@ -1,97 +1,69 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "OpenBeken: Open Source Firmware for Tuya IoT Modules"
+description: "OpenBeken is a Tasmota/ESPHome replacement firmware for BK7231, BL602, ESP32, RTL8710, W600/W800, LN882H, and 30+ other IoT chipsets."
 ---
 
-## Setting up
+OpenBeken (OpenBK7231T) is an open-source firmware that replaces the stock Tuya firmware on dozens of popular IoT chipsets. It brings MQTT connectivity, Home Assistant integration, an advanced scripting system, and a Tasmota-compatible command interface — all without vendor lock-in.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Flash your device" icon="microchip" href="/flashing">
+    Download the firmware and flash it to your BK7231, BL602, ESP32, RTL, or W600/W800 module.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Initial setup" icon="gear" href="/initial-setup">
+    Connect to WiFi, configure GPIO pins, and get your device online in minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="MQTT & Home Assistant" icon="house-signal" href="/connectivity/mqtt-setup">
+    Integrate with Home Assistant via MQTT discovery or manual YAML configuration.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Scripting & Automation" icon="code" href="/scripting/overview">
+    Use events, timers, and change handlers to automate your device behavior.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Get started in four steps
 
-Everything you need to create world-class documentation.
+<Steps>
+  <Step title="Download and flash the firmware">
+    Grab the latest binary for your chip from the [GitHub Releases](https://github.com/openshwprojects/OpenBK7231T_App/releases) page and flash it using the GUI flash tool or UART/SPI method.
+  </Step>
+  <Step title="Connect to your WiFi network">
+    After flashing, an access point named after your device appears. Connect to it, open `192.168.4.1`, go to **Config → WiFi**, enter your credentials, and reboot.
+  </Step>
+  <Step title="Configure GPIO pins">
+    Open the web interface, go to **Config → Pins**, and assign roles to each GPIO (relay, button, LED, ADC, etc.). You can apply a community device template to skip manual setup.
+  </Step>
+  <Step title="Set up MQTT and Home Assistant">
+    Enter your MQTT broker details under **Config → MQTT**, then click **Start Home Assistant Discovery** to auto-register your device entities.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## What OpenBeken supports
 
-## Need inspiration?
+<CardGroup cols={3}>
+  <Card title="30+ Chipsets" icon="cpu">
+    BK7231T/N, BL602, ESP32/ESP8266, RTL8710B/C/D, W600/W800, LN882H, ECR6600, and more.
+  </Card>
+  <Card title="MQTT + Home Assistant" icon="broadcast-tower">
+    Full MQTT support with auto-discovery for lights, relays, and sensors.
+  </Card>
+  <Card title="TuyaMCU protocol" icon="plug">
+    Communicate with the original Tuya MCU on dimmers, fans, and battery sensors.
+  </Card>
+  <Card title="LED control" icon="lightbulb">
+    RGBCW LEDs via PWM or I2C drivers: SM2135, BP5758D, WS2812B, and more.
+  </Card>
+  <Card title="Power metering" icon="bolt">
+    BL0942, BL0937, CSE7766, and other energy-metering chips with calibration.
+  </Card>
+  <Card title="Advanced scripting" icon="terminal">
+    Event handlers, repeating timers, clock events, and LittleFS-based scripts.
+  </Card>
+</CardGroup>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+## Supported platforms
+
+OpenBeken runs on hardware from Beken, Bouffalo Lab, Espressif, WinnerMicro, Realtek, Lightning Semi, ESWIN, and more. See the full [Supported Platforms](/supported-platforms) page for a feature matrix.
+
+<Note>
+  OpenBeken maintains Tasmota command compatibility, so existing Tasmota rules, MQTT flows, and ioBroker integrations generally work without modification.
+</Note>

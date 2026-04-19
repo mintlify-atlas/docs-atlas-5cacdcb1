@@ -1,0 +1,770 @@
+---
+title: "Complete OpenBeken driver reference"
+description: "Reference for all OpenBeken drivers including TuyaMCU, power metering chips, LED drivers, I2C sensors, WS2812B, IR, DDP, SSDP, and utility drivers."
+---
+
+OpenBeken uses a driver system to support the wide variety of hardware found inside Tuya-compatible devices. Each driver is a self-contained module that handles a specific chip, protocol, or feature. Drivers are started with `startDriver [DriverName]` — either from the web console, the **Config → Short startup command** field, or `autoexec.bat` on LittleFS. Many drivers start automatically when you configure the correct GPIO pin roles. Drivers are enabled at compile time per platform in `obk_config.h`; if a driver you need is not available on your platform, request it on the project's GitHub.
+
+<Note>
+  All driver descriptions are auto-generated from the firmware source code. For drivers marked as WIP, functionality may be incomplete or subject to change.
+</Note>
+
+## Protocol drivers
+
+These drivers handle communication protocols between the WiFi module and external microcontrollers.
+
+<AccordionGroup>
+  <Accordion title="TuyaMCU — Tuya serial protocol">
+    TuyaMCU handles the protocol between the WiFi module and the Tuya-compatible MCU found in most commercial devices. Communication uses the RX1/TX1 UART port. After starting this driver, use `linkTuyaMCUOutputToChannel` to map data point IDs (dpIDs) to OpenBeken channels.
+
+    **Enable define:** `ENABLE_DRIVER_TUYAMCU`
+
+    ```bash
+    startDriver TuyaMCU
+    # Change baud if needed (default is 9600)
+    tuyaMcu_setBaudRate 115200
+    # Map dpID 1 (bool) to channel 1
+    linkTuyaMCUOutputToChannel 1 1 1
+    ```
+
+    See the [elektroda.com TuyaMCU dimmer example](https://www.elektroda.com/rtvforum/topic3929151.html) for a full walkthrough.
+  </Accordion>
+
+  <Accordion title="tmSensor — battery-powered TuyaMCU sensor">
+    Used alongside TuyaMCU for low-power devices such as door sensors and humidity/temperature sensors. On boot, tmSensor requests a data update from the sensor MCU via TuyaMCU, reports it over MQTT, and then the MCU powers down the WiFi module and returns to sleep.
+
+    **Enable define:** `ENABLE_DRIVER_TUYAMCU`
+
+    ```bash
+    startDriver TuyaMCU
+    startDriver tmSensor
+    ```
+  </Accordion>
+
+  <Accordion title="GirierMCU — Girier MCU protocol">
+    Protocol driver for Girier-branded MCUs. Configuration is similar to TuyaMCU.
+
+    **Enable define:** `ENABLE_DRIVER_GIRIERMCU`
+
+    ```bash
+    startDriver GirierMCU
+    ```
+  </Accordion>
+
+  <Accordion title="UartTCP — UART to TCP bridge">
+    Bridges the UART port to a TCP socket. Primarily used for WiFi Zigbee coordinators where a serial Zigbee module needs network access.
+
+    **Enable define:** `ENABLE_DRIVER_UART_TCP`
+
+    ```bash
+    startDriver UartTCP
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Power metering drivers
+
+These drivers communicate with energy metering chips to measure voltage, current, power, and energy consumption. After starting the driver, use `VoltageSet`, `CurrentSet`, and `PowerSet` to calibrate readings.
+
+<AccordionGroup>
+  <Accordion title="BL0942 — UART power metering">
+    BL0942 communicates over UART (TX1/RX1 on BK chips). Default baud rate is 4800. You can use 9600 baud by passing it as an argument.
+
+    **Enable define:** `ENABLE_DRIVER_BL0942`
+
+    ```bash
+    startDriver BL0942        # 4800 baud
+    startDriver BL0942 9600   # 9600 baud
+    VoltageSet 230.0
+    CurrentSet 0.0
+    PowerSet 0.0
+    ```
+
+    See the [LSPA9 teardown example](https://www.elektroda.com/rtvforum/topic3887748.html).
+  </Accordion>
+
+  <Accordion title="BL0942SPI — SPI power metering">
+    SPI variant of BL0942, connected to the SPI1 port instead of UART. Used in some devices such as PZIOT-E01.
+
+    **Enable define:** `ENABLE_DRIVER_BL0942SPI`
+
+    ```bash
+    startDriver BL0942SPI
+    ```
+  </Accordion>
+
+  <Accordion title="BL0937 — pulse-output power metering">
+    BL0937 uses a pulse-frequency output protocol rather than UART. Requires three GPIO pins: CF, CF1, and SEL. Setting all three BL0937 pin roles in the GPIO configuration causes the driver to start automatically.
+
+    **Enable define:** `ENABLE_DRIVER_BL0937`
+
+    Pin roles required: `BL0937_CF`, `BL0937_CF1`, `BL0937_SEL`
+  </Accordion>
+
+  <Accordion title="CSE7761 — dual-circuit energy metering">
+    Single-phase multi-purpose energy metering chip with sigma-delta ADCs, SPI and UART interfaces. Driver is currently a work in progress.
+
+    **Enable define:** `ENABLE_DRIVER_CSE7761`
+
+    ```bash
+    startDriver CSE7761
+    ```
+  </Accordion>
+
+  <Accordion title="CSE7766 — UART power metering">
+    CSE7766 communicates over UART (TX1/RX1), similar to BL0942.
+
+    **Enable define:** `ENABLE_DRIVER_CSE7766`
+
+    ```bash
+    startDriver CSE7766
+    ```
+  </Accordion>
+
+  <Accordion title="RN8209 — Zmai-90 power metering">
+    Work-in-progress driver for the RN8209 chip found in some versions of the Zmai-90 smart socket.
+
+    **Enable define:** `ENABLE_DRIVER_RN8209`
+
+    ```bash
+    startDriver RN8209
+    ```
+  </Accordion>
+
+  <Accordion title="HLW8112SPI — HLW8112 SPI power metering">
+    Work-in-progress SPI driver for the HLW8112 energy metering chip.
+
+    **Enable define:** `ENABLE_DRIVER_HLW8112SPI`
+  </Accordion>
+</AccordionGroup>
+
+## LED drivers
+
+These drivers control specialized LED chips found in smart bulbs and light strips. Most auto-start when you configure the required GPIO pin roles.
+
+<AccordionGroup>
+  <Accordion title="SM2135 — RGBCW I2C LED driver">
+    SM2135 is a modified-I2C two-wire LED driver for RGBCW lights. The driver starts automatically when both `SM2135_DAT` and `SM2135_CLK` pin roles are set. Use `SM2135_Map` to correct the channel order for your device.
+
+    **Enable define:** `ENABLE_DRIVER_LED`
+
+    ```bash
+    # Remap if colors are mixed
+    SM2135_Map 0 2 1 3 4
+    # Set max current codes
+    SM2135_Current 2 4
+    ```
+  </Accordion>
+
+  <Accordion title="SM2235 — RGBCW I2C LED driver (SM2235/SM2335/SM2185N)">
+    Also covers SM2335 and SM2185N variants. Auto-starts when `SM2235_DAT` and `SM2235_CLK` pin roles are set.
+
+    **Enable define:** `ENABLE_DRIVER_LED`
+
+    ```bash
+    SM2235_Map 0 1 2 3 4
+    SM2235_Current 20
+    ```
+  </Accordion>
+
+  <Accordion title="BP5758D — RGBCW I2C LED driver">
+    Used in some BL602 and Sonoff bulbs. Auto-starts when `BP5758D_DAT` and `BP5758D_CLK` are set.
+
+    **Enable define:** `ENABLE_DRIVER_LED`
+
+    ```bash
+    BP5758D_Map 0 1 2 3 4
+    BP5758D_Current 10 10
+    ```
+  </Accordion>
+
+  <Accordion title="BP1658CJ — RGBCW I2C LED driver">
+    Similar to BP5758D. Auto-starts with `BP1658CJ_DAT` and `BP1658CJ_CLK` pin roles.
+
+    **Enable define:** `ENABLE_DRIVER_LED`
+
+    ```bash
+    BP1658CJ_Map 0 1 2 3 4
+    BP1658CJ_Current 10 10
+    ```
+  </Accordion>
+
+  <Accordion title="KP18058 — I2C LED driver (KP18058/KP18068)">
+    Supports both KP18058 and KP18068 chips. Auto-starts with `KP18058_CLK` and `KP18058_DAT` roles.
+
+    **Enable define:** `ENABLE_DRIVER_KP18058`
+
+    ```bash
+    KP18058_Map 0 1 2 3 4
+    # Values 0-31 for RGB, 0-31 for CW
+    KP18058_Current 14 30
+    ```
+  </Accordion>
+
+  <Accordion title="PixelAnim — WS2812B animations">
+    Provides a set of built-in animations for WS2812B addressable LED strips. Use `Anim [index]` to start an animation and `AnimSpeed [interval]` to control speed.
+
+    **Enable define:** `ENABLE_DRIVER_PIXELANIM`
+
+    ```bash
+    startDriver PixelAnim
+    Anim 3
+    AnimSpeed 50
+    ```
+  </Accordion>
+
+  <Accordion title="SM16703P — SPI addressable LED driver (WS2812B-compatible)">
+    Controls individually addressable LEDs via hardware SPI. The data line connects to P16 (MOSI). Also used for WS2812B and SM15155E strips.
+
+    **Enable define:** `ENABLE_DRIVER_SM16703P`
+
+    Pin role: `SM16703P_DIN`
+
+    ```bash
+    startDriver SM16703P
+    SM16703P_Init 60 RGB
+    SM16703P_SetPixel all 255 0 0    # all red
+    SM16703P_SetPixel 0 0 255 0      # first pixel green
+    SM16703P_Start
+    ```
+  </Accordion>
+
+  <Accordion title="SM15155E — single-wire 5-channel LED driver">
+    WS2812B-like single-wire controller for 5-channel LED output. Uses P16 (SPI out) on Beken.
+
+    **Enable define:** `ENABLE_DRIVER_SM15155E`
+
+    Pin role: `SM16703P_DIN` (same role as SM16703P)
+
+    ```bash
+    startDriver SM15155E
+    ```
+  </Accordion>
+
+  <Accordion title="PWMToggler — PWM on/off with value memory">
+    An abstraction layer on top of raw PWM channels that allows toggling the PWM output on and off while preserving its value. Useful for custom lights or laser devices where you need power control separate from intensity.
+
+    **Enable define:** `PLATFORM_BEKEN` or `WINDOWS`
+
+    ```bash
+    startDriver PWMToggler
+    toggler_channel0 3   # link toggler 0 to channel 3
+    toggler_enable0 1
+    toggler_set0 75
+    ```
+  </Accordion>
+
+  <Accordion title="Drawers — WS2812B smart drawers">
+    WS2812B driver wrapper with a REST API for the smart drawers project.
+
+    **Enable define:** `ENABLE_DRIVER_DRAWERS`
+  </Accordion>
+</AccordionGroup>
+
+## I2C and sensor drivers
+
+These drivers communicate with sensors via I2C (hardware or software). The generic `I2C` driver must be started first for sensors that do not have dedicated pin roles.
+
+<AccordionGroup>
+  <Accordion title="I2C — generic software/hardware I2C">
+    Generic I2C driver for displays, port expanders, and sensors. Supports both hardware and software (bit-bang) I2C. Use `SOFT_SDA` and `SOFT_SCL` pin roles for software I2C.
+
+    **Enable define:** `ENABLE_I2C`
+
+    ```bash
+    startDriver I2C
+    scanI2C Soft    # scan for connected devices
+    ```
+  </Accordion>
+
+  <Accordion title="BMP280 — temperature and pressure">
+    Temperature and pressure sensor with I2C interface.
+
+    **Enable define:** `ENABLE_DRIVER_BMP280`
+
+    ```bash
+    startDriver BMP280
+    ```
+  </Accordion>
+
+  <Accordion title="BMPI2C — BMP085/180/280/BME280/BME68X">
+    Unified driver for the full Bosch BMP/BME sensor family via I2C. Supports temperature, pressure, humidity (BME variants), and gas (BME68X).
+
+    **Enable define:** `ENABLE_DRIVER_BMPI2C`
+
+    ```bash
+    startDriver BMPI2C
+    BMPI2C_Cycle 30
+    BMPI2C_Calibrate -2 0 5
+    ```
+  </Accordion>
+
+  <Accordion title="SHT3X — humidity and temperature (SHT30/31/35)">
+    Auto-starts when `SHT3X_DAT` and `SHT3X_CLK` pin roles are configured.
+
+    **Enable define:** `ENABLE_DRIVER_SHT3X`
+
+    ```bash
+    SHT_Calibrate -1 2
+    SHT_cycle 60
+    ```
+  </Accordion>
+
+  <Accordion title="CHT83XX — CHT8305/8310/8315 temperature and humidity">
+    I2C temperature and humidity sensors. Auto-starts when `CHT83XX_DAT` and `CHT83XX_CLK` roles are set.
+
+    **Enable define:** `ENABLE_DRIVER_CHT83XX`
+  </Accordion>
+
+  <Accordion title="AHT2X — AHT10/AHT20/AHT30 humidity and temperature">
+    I2C humidity and temperature sensors.
+
+    **Enable define:** `ENABLE_DRIVER_AHT2X`
+
+    ```bash
+    startDriver AHT2X
+    AHT2X_Cycle 30
+    AHT2X_Calibrate -2 5
+    ```
+  </Accordion>
+
+  <Accordion title="MCP9808 — I2C temperature with alert pin">
+    Precision temperature sensor with programmable alert output. Supports external wakeup functionality.
+
+    **Enable define:** `ENABLE_DRIVER_MCP9808`
+
+    ```bash
+    startDriver MCP9808
+    MCP9808_Adr 0x18
+    MCP9808_AlertRange 18 28
+    ```
+  </Accordion>
+
+  <Accordion title="SGP — SGP air quality sensor">
+    I2C air quality sensor (SGP30, SGP40). Use `SGP_CLK` and `SGP_DAT` pin roles for auto-start.
+
+    **Enable define:** `ENABLE_DRIVER_SGP`
+
+    ```bash
+    startDriver SGP
+    SGP_cycle 30
+    ```
+  </Accordion>
+
+  <Accordion title="SSD1306 — 128×32 I2C OLED display">
+    Driver for the popular SSD1306 monochrome OLED display.
+
+    **Enable define:** `ENABLE_DRIVER_SSD1306`
+
+    ```bash
+    startDriver SSD1306
+    ssd1306_clear
+    ssd1306_goto 0 0
+    ssd1306_print Hello
+    ```
+  </Accordion>
+
+  <Accordion title="DS1820 / DS1820_FULL — OneWire temperature sensor">
+    - **DS1820** — simple OneWire driver for DS18B20 temperature sensors. Use the `DS1820_IO` pin role.
+    - **DS1820_FULL** — full-featured driver with multi-sensor support, per-sensor naming, and channel assignment.
+
+    **Enable defines:** `ENABLE_DRIVER_DS1820`, `ENABLE_DRIVER_DS1820_FULL`
+
+    ```bash
+    # Full driver: scan and assign sensors
+    DS1820_FULL_scansensors
+    DS1820_FULL_setsensor "0x28 0x01 0x02 0x03 0x04 0x05 0x06 0x07" "kitchen" 2
+    ```
+  </Accordion>
+
+  <Accordion title="LTR_ALS — LTR-303/329 ambient light sensor">
+    I2C ambient light sensor with configurable gain, integration time, and interrupt support.
+
+    **Enable define:** `ENABLE_DRIVER_LTR_ALS`
+
+    ```bash
+    startDriver LTR_ALS
+    LTR_ALS 3 0 3    # 8x gain, 100ms integration, 500ms repeat
+    LTR_Cycle 10
+    ```
+  </Accordion>
+
+  <Accordion title="TCA9554 — I2C GPIO expander">
+    TCA9554 I2C GPIO port expander.
+
+    **Enable define:** `ENABLE_DRIVER_TCA9554`
+  </Accordion>
+
+  <Accordion title="MAX6675 / MAX31855 — thermocouple interfaces">
+    - **MAX6675** — thermocouple-to-digital converter for high-temperature measurement.
+    - **MAX31855** — similar thermocouple interface.
+
+    **Enable defines:** `ENABLE_DRIVER_MAX6675`, `ENABLE_DRIVER_MAX31855`
+  </Accordion>
+</AccordionGroup>
+
+## Display drivers
+
+<AccordionGroup>
+  <Accordion title="MAX72XX — LED matrix display">
+    MAX72XX LED matrix display driver with font support and a simple scripting interface.
+
+    **Enable define:** `ENABLE_DRIVER_MAX72XX`
+
+    ```bash
+    MAX72XX_Setup [clk] [cs] [din] [segments]
+    startDriver MAX72XX
+    MAX72XX_Print Hello
+    MAX72XX_Scroll 0 0 Hello World
+    ```
+  </Accordion>
+
+  <Accordion title="MAX72XX_Clock — clock display for MAX72XX">
+    Hardcoded clock display driver built on top of MAX72XX. Requires NTP and the MAX72XX driver.
+
+    **Enable define:** `ENABLE_DRIVER_MAX72XX`
+
+    ```bash
+    MAX72XX_Setup 14 12 13 4
+    startDriver MAX72XX_Clock
+    startDriver NTP
+    ```
+  </Accordion>
+
+  <Accordion title="HT16K33 — 16-segment I2C display">
+    Driver for 16-segment LED displays with I2C interface.
+
+    **Enable define:** `ENABLE_DRIVER_HT16K33`
+
+    ```bash
+    startDriver HT16K33
+    HT16K33_Print 1234
+    HT16K33_Brightness 8
+    ```
+  </Accordion>
+
+  <Accordion title="TM1637 / GN6932 / TM1638 / HD2015 — 7-segment displays">
+    Drivers for common 7-segment LED display modules. Auto-start when all required pin roles are configured.
+
+    **Enable define:** `ENABLE_DRIVER_TMGN`
+
+    | Driver | Pin roles |
+    |--------|-----------|
+    | TM1637 | `TM1637_DIO`, `TM1637_CLK` |
+    | GN6932 | `GN6932_CLK`, `GN6932_DAT`, `GN6932_STB` |
+    | TM1638 | `TM1638_CLK`, `TM1638_DAT`, `TM1638_STB` |
+
+    ```bash
+    TMGN_Print 0 0 $hour:$minute
+    TMGN_Brightness 7 1
+    TMGN_Clear
+    ```
+  </Accordion>
+
+  <Accordion title="PT6523 — car radio LCD driver">
+    Driver for PT6523 car radio LCD displays. See the [teardown and presentation](https://www.elektroda.com/rtvforum/topic3983111.html) for wiring details.
+
+    **Enable define:** `ENABLE_DRIVER_PT6523`
+  </Accordion>
+
+  <Accordion title="TextScroller — scrolling text utility">
+    Wrapper utility that provides scrolling text animation for implemented displays.
+
+    **Enable define:** `ENABLE_DRIVER_TEXTSCROLLER`
+
+    ```bash
+    startDriver TextScroller
+    TS_Print 0 0 Hello World
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Protocol and integration drivers
+
+<AccordionGroup>
+  <Accordion title="DDP — distributed display protocol">
+    DDP is a UDP-based LED control protocol supported by xLights, Falcon Player, and other sequencing software. Allows external apps to control OpenBeken LED strips in real time.
+
+    **Enable define:** `ENABLE_DRIVER_DDP`
+
+    ```bash
+    startDriver DDP
+    ```
+  </Accordion>
+
+  <Accordion title="DDPSend — send DDP to another device">
+    Sends DDP packets to another device. See the [DDP topic](https://www.elektroda.com/rtvforum/topic4040325.html) for examples.
+
+    **Enable define:** `ENABLE_DRIVER_DDPSEND`
+
+    ```bash
+    startDriver DDPSend
+    DDP_Send [ip] [host] [pixelsize] [delay] [data]
+    ```
+  </Accordion>
+
+  <Accordion title="SSDP — network discovery">
+    SSDP (Simple Service Discovery Protocol) allows OpenBeken devices to appear in the Windows Network section and enables Alexa discovery. Must be running before Wemo or Hue.
+
+    **Enable define:** `ENABLE_DRIVER_SSDP`
+
+    ```bash
+    startDriver SSDP
+    # List discovered OBK devices on the network
+    obkDeviceList
+    ```
+  </Accordion>
+
+  <Accordion title="Wemo — Alexa Wemo emulation">
+    Emulates a Belkin Wemo device for Alexa voice control. Requires SSDP to be running.
+
+    **Enable define:** `ENABLE_DRIVER_WEMO`
+
+    ```bash
+    backlog startDriver SSDP; startDriver Wemo
+    ```
+  </Accordion>
+
+  <Accordion title="Hue — Alexa Hue emulation">
+    Emulates a Philips Hue bridge for Alexa voice control. Requires SSDP.
+
+    **Enable define:** `ENABLE_DRIVER_HUE`
+
+    ```bash
+    backlog startDriver SSDP; startDriver Hue
+    ```
+  </Accordion>
+
+  <Accordion title="DGR — Tasmota Device Groups">
+    Implements the Tasmota Device Groups protocol for synchronized control of multiple devices without a central MQTT broker.
+
+    **Enable define:** `ENABLE_TASMOTADEVICEGROUPS`
+
+    ```bash
+    startDriver DGR
+    DGR_SendPower MyGroup 1 1
+    DGR_SendBrightness MyGroup 80
+    DGR_SendRGBCW MyGroup FF8800
+    ```
+  </Accordion>
+
+  <Accordion title="IR / IR2 — infrared remote control">
+    - **IR** — full IR library wrapper for receiving and sending IR signals. Enable with `ENABLE_DRIVER_IR` (Arduino-IRremote) or `ENABLE_DRIVER_IRREMOTEESP` (IRremoteESP8266).
+    - **IR2** — simpler IR driver for sending captures from Flipper Zero.
+
+    ```bash
+    startDriver IR
+    IRSend NEC-1-1A-0       # send NEC code
+    IREnable RXTX 0          # disable RX while transmitting
+    ```
+  </Accordion>
+
+  <Accordion title="DMX — DMX512 lighting protocol">
+    DMX lighting control protocol driver.
+
+    **Enable define:** `ENABLE_DRIVER_DMX`
+
+    ```bash
+    startDriver DMX
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Utility drivers
+
+<AccordionGroup>
+  <Accordion title="NTP — network time synchronization">
+    Fetches the current time from an NTP server. Required for `addClockEvent`, sunrise/sunset variables, and timestamp-based logging. Without NTP, there is no correct datetime.
+
+    **Enable define:** `ENABLE_NTP`
+
+    ```bash
+    startDriver NTP
+    ntp_setServer pool.ntp.org
+    ntp_timeZoneOfs 1        # UTC+1
+    ```
+  </Accordion>
+
+  <Accordion title="DS3231 — hardware RTC">
+    Driver for the DS3231 real-time clock over I2C. Can sync the device clock from the RTC on startup or keep the device clock in sync from the RTC.
+
+    **Enable define:** `ENABLE_DRIVER_DS3231`
+
+    ```bash
+    # Start with CLK pin 5, DATA pin 6, sync mode 1 (set device clock from RTC on start)
+    startDriver DS3231 5 6 1
+    DS3231_GetTime
+    DS3231_SetTime 19 50 01 13 8 25
+    ```
+  </Accordion>
+
+  <Accordion title="HTTPButtons — custom web interface buttons">
+    Creates custom, scriptable buttons on the device's main web page. Define buttons and their commands in `autoexec.bat`.
+
+    **Enable define:** `ENABLE_DRIVER_HTTPBUTTONS`
+
+    ```bash
+    startDriver HTTPButtons
+    setButtonLabel 0 "Scene 1"
+    setButtonCommand 0 "backlog led_basecolor_rgb FF0000; led_dimmer 80"
+    setButtonColor 0 red
+    setButtonEnabled 0 1
+    ```
+  </Accordion>
+
+  <Accordion title="Charts — on-device data charting">
+    Creates customizable charts displayed directly on the device's web interface. Data is logged via `chart_add` or `chart_addNow` commands.
+
+    **Enable define:** `ENABLE_DRIVER_CHARTS`
+
+    ```bash
+    startDriver Charts
+    chart_create 120 2 1
+    chart_setAxis 0 Time 0 Time
+    chart_setVar 0 Temperature 0
+    chart_setVar 1 Humidity 0
+    chart_addNow $CH1 $CH2
+    ```
+  </Accordion>
+
+  <Accordion title="Widget — custom HTML widgets">
+    Loads custom HTML snippets from LittleFS files and displays them on the main OBK web page. Snippets can use the OBK REST API.
+
+    **Enable define:** `ENABLE_DRIVER_WIDGET`
+
+    ```bash
+    startDriver Widget
+    widget_create 0 1 mywidget.html
+    ```
+  </Accordion>
+
+  <Accordion title="ADCButton — multiple buttons on one ADC pin">
+    Connects multiple buttons to a single ADC pin using a resistor ladder. Each button has a different resistor value producing a unique voltage level. Use `AB_Map` to configure margins.
+
+    **Enable define:** `ENABLE_DRIVER_ADCBUTTON`
+
+    Pin role: `ADC_Button`
+
+    ```bash
+    startDriver ADCButton
+    AB_Map 4    # 4 margins = 5 possible button values
+    ```
+  </Accordion>
+
+  <Accordion title="DoorSensor — deep sleep door/contact sensor">
+    Uses BK GPIO deep sleep for ultra-low-power door or contact sensors. The device wakes on a GPIO event, reports the change over MQTT, and goes back to sleep. Use the `DoorSensorWithDeepSleep` pin role for auto-start.
+
+    **Enable define:** `PLATFORM_BEKEN` or `WINDOWS`
+
+    ```bash
+    startDriver DoorSensor
+    DSTime 30         # stay awake 30s after last event
+    DSEdge 2          # auto-detect rising/falling based on current state
+    ```
+  </Accordion>
+
+  <Accordion title="ADCSmoother — staircase switch synchronization">
+    Used for 3-way staircase switches synchronized over an extra wire via ADC voltage levels.
+
+    **Enable define:** `ENABLE_DRIVER_ADCSMOOTHER`
+
+    ```bash
+    startDriver ADCSmoother
+    ADCSmoother 0 10 100 50 5 1
+    ```
+  </Accordion>
+
+  <Accordion title="Battery — ADC battery measurement">
+    Measures battery voltage via ADC and calculates battery level percentage. Optionally controls a relay.
+
+    **Enable define:** `ENABLE_DRIVER_BATTERY`
+
+    Pin roles: `BAT_ADC`, `BAT_Relay`
+
+    ```bash
+    startDriver Battery
+    Battery_Setup 1500 3000 2 2400 4096
+    Battery_cycle 60
+    ```
+  </Accordion>
+
+  <Accordion title="OpenWeatherMap — weather data integration">
+    Fetches current weather (temperature, humidity, pressure) for your GPS coordinates from the OpenWeatherMap API. Results are stored in configurable channels.
+
+    **Enable define:** `ENABLE_DRIVER_OPENWEATHERMAP`
+
+    ```bash
+    startDriver OpenWeatherMap
+    owm_setup 52.23 21.01 YOUR_API_KEY
+    owm_channels 10 11 12    # store in channels 10, 11, 12
+    owm_request
+    ```
+  </Accordion>
+
+  <Accordion title="ShiftRegister — shift register output">
+    Maps OpenBeken channels to shift register outputs (74HC595 or compatible).
+
+    **Enable define:** `ENABLE_DRIVER_SHIFTREGISTER`
+  </Accordion>
+
+  <Accordion title="ChargingLimit — EV charger control">
+    Monitors a channel for changes and runs a command when a maximum delta or timeout is exceeded. Used for electric vehicle charger management.
+
+    **Enable define:** `ENABLE_DRIVER_CHARGINGLIMIT`
+
+    ```bash
+    startDriver ChargingLimit
+    chSetupLimit 5 100 3600 SetChannel 1 0
+    ```
+  </Accordion>
+
+  <Accordion title="NEO6M — GPS receiver">
+    GPS receiver driver using UART at 9600 baud (or custom rate).
+
+    **Enable define:** `ENABLE_DRIVER_NEO6M`
+
+    ```bash
+    startDriver NEO6M
+    startDriver NEO6M 115200    # custom baud
+    ```
+  </Accordion>
+
+  <Accordion title="mqttServer — embedded MQTT broker">
+    Runs an embedded MQTT server on the device.
+
+    **Enable define:** `ENABLE_DRIVER_MQTTSERVER`
+
+    ```bash
+    startDriver mqttServer
+    ```
+  </Accordion>
+
+  <Accordion title="PWMG — synchronized PWM groups">
+    Provides synchronized PWM output for motor control and other applications requiring multiple in-phase or phase-shifted PWM signals.
+
+    **Enable define:** `ENABLE_DRIVER_PWM_GROUP`
+
+    ```bash
+    startDriver PWMG
+    PWMG_Set 50 50 5 1000 3 4    # 50% duty A, 50% duty B, 5% dead time, 1kHz, pins 3 and 4
+    ```
+  </Accordion>
+
+  <Accordion title="Bridge — H-bridge relay driver">
+    A bridge relay driver for motor or actuator control (for example, the TONGOU TO-Q-SY1-JWT Din Rail Switch).
+
+    **Enable define:** `ENABLE_DRIVER_BRIDGE`
+
+    Pin roles: `BridgeForward`, `BridgeReverse`
+  </Accordion>
+
+  <Accordion title="PinMutex — mutual exclusion between outputs">
+    Enforces mutual exclusion between relay/output channels. Useful for shutter and blind control where only one direction can be active at a time.
+
+    **Enable define:** `ENABLE_DRIVER_PINMUTEX`
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  The recommended way to load drivers at startup is to put `startDriver` commands in `autoexec.bat` via the **Web Application → LittleFS** tab. This survives reboots and is easier to edit than the short startup command field.
+</Tip>

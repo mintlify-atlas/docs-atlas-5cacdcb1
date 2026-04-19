@@ -1,0 +1,294 @@
+---
+title: "Build OpenBeken firmware from source"
+description: "Compile OpenBeken for BK7231T/N, XR809, BL602, W600/W800, and more using Docker or per-platform SDKs, and customize features via obk_config.h."
+---
+
+OpenBeken targets a wide range of microcontrollers, each with its own vendor SDK and toolchain. Rather than a single unified build system, each platform has its own SDK repository that you clone alongside the shared application code. Docker is the recommended approach — it packages all toolchains into one image and can build every supported platform in a single run.
+
+## Docker build (recommended)
+
+The Docker build environment handles all SDK cloning, toolchain setup, and compilation automatically. You only need Docker installed on your host.
+
+<Steps>
+  <Step title="Build the Docker image">
+    Run this command from the `docker/` directory inside the cloned `OpenBK7231T_App` repository. Your current user name and ID are passed through to preserve file permissions on the output files.
+
+    ```bash
+    docker build -t openbk_build --build-arg UID=$UID --build-arg USERNAME=$USER .
+    ```
+
+    If you want to set a specific timezone in the image:
+
+    ```bash
+    docker build -t openbk_build --build-arg UID=$UID --build-arg USERNAME=$USER --build-arg TZ="Europe/Berlin" .
+    ```
+  </Step>
+  <Step title="Run the build">
+    Run the image from the `docker/` directory. The parent directory (the repository root) is mounted into the container:
+
+    ```bash
+    docker run -it -v "$(pwd)/..":/OpenBK7231T_App openbk_build
+    ```
+
+    By default this builds all supported platforms: `OpenBK7231T`, `OpenBK7231N`, `OpenXR809`, `OpenBL602`, `OpenW800`, `OpenW600`, and `OpenLN882H`.
+  </Step>
+  <Step title="Find the output">
+    Completed binaries are placed in the repository's `output/` directory, organised by version string.
+  </Step>
+</Steps>
+
+### Building specific platforms
+
+Pass the `TARGET_SDKS` environment variable to build only the platforms you need. Use a comma-separated list with no spaces:
+
+```bash
+docker run -it \
+  -v "$(pwd)/..":/OpenBK7231T_App \
+  --env TARGET_SDKS="OpenBK7231T,OpenBL602" \
+  openbk_build
+```
+
+### Parallel compilation
+
+Use `MAKEFLAGS` to enable parallel make jobs and speed up compilation:
+
+```bash
+docker run -it \
+  -v "$(pwd)/..":/OpenBK7231T_App \
+  --env MAKEFLAGS="-j 8" \
+  openbk_build
+```
+
+### Custom version string
+
+```bash
+docker run -it \
+  -v "$(pwd)/..":/OpenBK7231T_App \
+  --env APP_VERSION="my-custom-build-1.0" \
+  openbk_build
+```
+
+### Apple Silicon Macs
+
+The toolchains used by OpenBeken are x86-only binaries. On Apple Silicon Macs you need to enable x86 emulation through Rosetta 2 in Docker settings. Once enabled, build and run with the `--platform linux/amd64` flag:
+
+```bash
+docker buildx build --platform linux/amd64 --load \
+  -t openbk_build --build-arg USERNAME=$USER .
+
+docker run --platform linux/amd64 -it \
+  -v "$(pwd)/..":/OpenBK7231T_App openbk_build
+```
+
+Emulation is not perfectly stable — if a platform build fails, retry it. It usually succeeds on a second attempt.
+
+## Per-platform manual builds
+
+If you prefer to build without Docker, each platform has its own SDK repository. Clone the SDK, place the application code in the correct subdirectory, and invoke the platform's build script.
+
+<Tabs>
+  <Tab title="BK7231T">
+    1. Clone the BK7231T SDK: `https://github.com/openshwprojects/OpenBK7231T`
+    2. Clone the app into `bk7231sdk/apps/openbk7231app/`
+    3. On Windows, install [Cygwin](https://www.cygwin.com) with `make` and `python3` packages. Cygwin must be installed in a path with no spaces.
+    4. Open a Cygwin terminal and navigate to the SDK root.
+    5. Build:
+
+    ```bash
+    ./b.sh
+    ```
+
+    For a named build with version:
+
+    ```bash
+    ./build_app.sh apps/openbk7231app openbk7231app 1.0.0
+    ```
+
+    Output binaries appear in `apps/openbk7231app/output/1.0.0/`.
+  </Tab>
+  <Tab title="BK7231N">
+    The process is identical to BK7231T. Use the BK7231N SDK instead:
+
+    `https://github.com/openshwprojects/OpenBK7231N`
+
+    You may need to rename the app directory from `OpenBK7231T_App` to `OpenBK7231N_App` to match the SDK's expected folder name.
+  </Tab>
+  <Tab title="XR809">
+    1. Clone the XR809 SDK: `https://github.com/openshwprojects/OpenXR809`
+    2. Checkout the app into `openxr809/project/oxr_sharedApp/shared/`
+    3. Build:
+
+    ```bash
+    ./build_oxr_sharedapp.sh
+    ```
+  </Tab>
+  <Tab title="BL602">
+    1. Clone the BL602 SDK: `https://github.com/openshwprojects/OpenBL602`
+    2. Clone the app into `OpenBL602/customer_app/bl602_sharedApp/bl602_sharedApp/shared/`
+    3. On Windows, install [MSys2](https://www.msys2.org/) and run `pacman -S make`. Create a copy of `OpenBL602/toolchain/riscv/MSYS` and rename it `MINGW64`.
+    4. Navigate to `OpenBL602/customer_app/bl602_sharedApp/` and build:
+
+    ```bash
+    ./genromap
+    ```
+
+    Output binary: `OpenBL602/customer_app/bl602_sharedApp/build_out/bl602_sharedApp.bin`
+  </Tab>
+  <Tab title="W600 / W800">
+    **W600:** `https://github.com/openshwprojects/OpenW600`
+
+    **W800/W801:**
+    1. Clone the W800 SDK: `https://github.com/openshwprojects/OpenW800`
+    2. Checkout the app into `OpenW800/sharedAppContainer/sharedApp/`  
+       (verify the path by checking for `OpenW800\sharedAppContainer\sharedApp\src\devicegroups`)
+    3. Install **C-Sky Development Suite for CK-CPU V5.2.11** (requires registration at `https://occ.t-head.cn`). The build was tested with `cds-windows-mingw-elf_tools-V5.2.11-20220512-2012.zip`.
+    4. Open the project in the C-Sky IDE and build.
+  </Tab>
+  <Tab title="Windows simulator">
+    You can build OpenBeken as a Windows application for local development and testing. Open `openBeken_win32_mvsc2017` in Microsoft Visual Studio Community 2017, select the **Debug Windows** or **Debug Windows Scriptonly** configuration, and build.
+
+    The Windows build includes full scripting and MQTT support. LittleFS operates on a 2 MB memory-mapped file so you can test filesystem features without hardware.
+
+    <Note>
+    There is a minor issue in the Winsock code that breaks Tasmota Control compatibility in the Windows build. All other features work correctly.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Customising features with obk_config.h
+
+`src/obk_config.h` is the central feature flag file. Each platform has a dedicated `#elif` block where you add or remove `#define` statements to include or exclude drivers and subsystems.
+
+### How it works
+
+Feature flags follow consistent naming conventions:
+
+| Prefix | Purpose |
+|--------|---------|
+| `ENABLE_HTTP_*` | Web UI pages (MQTT config, IP config, flags page, etc.) |
+| `ENABLE_DRIVER_*` | Loadable drivers (BL0942, SM2135, TuyaMCU, etc.) |
+| `ENABLE_*` | Everything else (scripting engine, NTP, MQTT, LittleFS, etc.) |
+
+### Example: enabling the BL0942 driver on BK7231T
+
+Find the `#elif PLATFORM_BEKEN` block in `obk_config.h` and add:
+
+```c
+#define ENABLE_DRIVER_BL0942    1
+```
+
+### Example: enabling DDP for xLights
+
+```c
+#define ENABLE_DRIVER_DDP       1
+```
+
+### Example: enabling Berry scripting
+
+```c
+#define ENABLE_OBK_BERRY        1
+```
+
+### Common feature flags
+
+<AccordionGroup>
+  <Accordion title="Core features">
+    | Flag | Description |
+    |------|-------------|
+    | `ENABLE_MQTT` | MQTT client support |
+    | `ENABLE_HA_DISCOVERY` | Home Assistant auto-discovery |
+    | `ENABLE_OBK_SCRIPTING` | Built-in scripting engine |
+    | `ENABLE_OBK_BERRY` | Berry scripting language |
+    | `ENABLE_LITTLEFS` | LittleFS filesystem (required for autoexec.bat) |
+    | `ENABLE_NTP` | NTP time synchronisation |
+    | `ENABLE_EXPAND_CONSTANT` | Variable expansion (`$CH1`, `$hour`, etc.) |
+    | `ENABLE_TASMOTADEVICEGROUPS` | Tasmota Device Groups (DGR) support |
+    | `ENABLE_TASMOTA_JSON` | Tasmota-compatible JSON responses |
+  </Accordion>
+  <Accordion title="Power metering drivers">
+    | Flag | Description |
+    |------|-------------|
+    | `ENABLE_DRIVER_BL0942` | BL0942 UART power meter |
+    | `ENABLE_DRIVER_BL0942SPI` | BL0942 SPI variant |
+    | `ENABLE_DRIVER_BL0937` | BL0937 GPIO pulse-counting power meter |
+    | `ENABLE_DRIVER_CSE7766` | CSE7766 UART power meter |
+    | `ENABLE_DRIVER_CSE7761` | CSE7761 (work in progress) |
+  </Accordion>
+  <Accordion title="LED drivers">
+    | Flag | Description |
+    |------|-------------|
+    | `ENABLE_LED_BASIC` | Basic LED control (always enabled) |
+    | `ENABLE_DRIVER_LED` | I2C LED drivers (SM2135, BP5758D, BP1658CJ, SM2235) |
+    | `ENABLE_DRIVER_SM16703P` | WS2812B and SM16703P addressable LED strip |
+    | `ENABLE_DRIVER_PIXELANIM` | Built-in WS2812B animations |
+    | `ENABLE_DRIVER_DDP` | DDP protocol receiver (for xLights) |
+    | `ENABLE_DRIVER_DDPSEND` | DDP protocol sender |
+  </Accordion>
+  <Accordion title="Sensors and other drivers">
+    | Flag | Description |
+    |------|-------------|
+    | `ENABLE_DRIVER_TUYAMCU` | TuyaMCU serial protocol |
+    | `ENABLE_DRIVER_DHT` | DHT11/DHT22 temperature and humidity |
+    | `ENABLE_DRIVER_DS1820` | DS18B20 one-wire temperature sensor |
+    | `ENABLE_DRIVER_SHT3X` | SHT30/31/35 humidity and temperature |
+    | `ENABLE_DRIVER_AHT2X` | AHT10/20/30 humidity and temperature |
+    | `ENABLE_DRIVER_BMPI2C` | BMP280/BME280/BME68X I2C sensors |
+    | `ENABLE_DRIVER_IR` | IR remote receive/transmit |
+    | `ENABLE_DRIVER_SSDP` | SSDP device discovery |
+    | `ENABLE_DRIVER_WEMO` | Wemo emulation for Alexa |
+    | `ENABLE_DRIVER_HUE` | Hue emulation for Alexa |
+    | `ENABLE_DRIVER_MDNS` | mDNS / Bonjour advertising |
+    | `ENABLE_I2C` | Generic I2C bus support |
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+Adding too many drivers to a small platform (e.g., BK7231N with 2 MB flash) can exceed available code space and prevent the firmware from linking. Remove drivers you do not need if you hit size limits.
+</Warning>
+
+## Online build system
+
+If you do not want to set up a local build environment, OpenBeken provides an online build service. You can select your target platform and a feature variant (default, TuyaMCU, power metering, sensors, etc.) and download a pre-compiled binary.
+
+The online builder uses the same `obk_config.h` variant system. Predefined variants include:
+
+| Variant | Description |
+|---------|-------------|
+| `DEFAULT` | Standard feature set |
+| `TUYAMCU` | Optimised for TuyaMCU devices |
+| `POWERMETERING` | Includes all power metering drivers |
+| `SENSORS` | Includes common environmental sensors |
+| `BERRY` | Includes Berry scripting language |
+| `IRREMOTEESP` | Includes IR remote support via IRremoteESP8266 |
+
+These correspond to the `OBK_VARIANT_*` constants defined at the top of `obk_config.h`.
+
+## Development setup
+
+For editing code, any editor works. The repository includes VS Code settings for consistent formatting (tabs, tab size 4). For other editors, configure your indentation to use tabs with a width of 4.
+
+If you plan to modify the web UI (HTML/CSS/JavaScript), install Node.js and run `npm install` at the repository root to get the `gulp` build tools:
+
+```bash
+npm install
+gulp
+```
+
+Gulp tasks appear automatically in the VS Code Explorer panel and can also be run from the terminal.
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Supported platforms" icon="chip" href="/supported-platforms">
+    Full list of supported hardware modules and SoC families.
+  </Card>
+  <Card title="Drivers overview" icon="layers" href="/configuration/drivers-overview">
+    How to start and configure runtime drivers in autoexec.bat.
+  </Card>
+  <Card title="Driver reference" icon="book" href="/reference/driver-reference">
+    Complete driver list with compile flags and descriptions.
+  </Card>
+  <Card title="Safe mode" icon="shield" href="/configuration/safe-mode">
+    Recover a device that fails to boot due to a bad configuration.
+  </Card>
+</CardGroup>

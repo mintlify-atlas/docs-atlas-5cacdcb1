@@ -1,0 +1,176 @@
+---
+title: "GPIO pin role reference for OpenBeken"
+description: "Reference for all OpenBeken GPIO pin roles: relay and LED outputs, button inputs, PWM, LED driver data lines, sensor pins, and deep-sleep configurations."
+---
+
+Every GPIO pin on an OpenBeken device is assigned a **role** that determines how the firmware uses it. Roles are set in the web interface under **Config → Module Pins Configuration** (or by the `SetPinRole` console command). Most roles also require a channel index — this links the pin to the channel that stores or controls its value. Setting the correct pin roles is the first step when configuring any new device.
+
+<Note>
+  Many driver pin roles cause the related driver to start automatically when all required pins are configured and the device reboots. Check the description for each role to see whether a manual `startDriver` call is still needed.
+</Note>
+
+## Output roles
+
+These roles drive a physical output — a relay, an LED, or a PWM signal.
+
+| Role | Description |
+|------|-------------|
+| `Relay` | Active-high relay. The relay closes when the linked channel value is `1`. |
+| `Relay_n` | As `Relay`, but with inverted logic — the relay closes when the channel is `0`. |
+| `LED` | Active-high LED. Internally identical to `Relay`; the separate name makes configuration more readable. |
+| `LED_n` | As `LED`, but with inverted logic. |
+| `PWM` | Pulse-width modulation output for LED dimmers. The channel index must match the correct RGBCW position (R=1, G=2, B=3, C=4, W=5). Supports MQTT dimming from Home Assistant. |
+| `PWM_n` | As `PWM`, but with inverted duty cycle. Useful for hardware that uses an active-low PWM signal or for single-PWM warm/cool-white switching (requires a special flag). |
+| `PWM_ScriptOnly` | Like `PWM`, but excluded from the automatic LED/light generation logic. Use when you control the PWM channel directly from scripts or manual `SetChannel` calls. |
+| `PWM_ScriptOnly_n` | As `PWM_ScriptOnly`, but with an inverted duty cycle. |
+| `AlwaysHigh` | Pin is always driven high. Useful as a constant power rail for low-current loads. |
+| `AlwaysLow` | Pin is always driven low. |
+| `BridgeForward` | Motor/relay H-bridge control signal for the forward direction. Used with the Bridge driver. |
+| `BridgeReverse` | Motor/relay H-bridge control signal for the reverse direction. |
+| `StripState` | Output pin that tracks the current `led_enableAll` value. High when the LED strip is on. |
+| `StripState_n` | As `StripState`, but inverted — high when the LED strip is off. |
+| `BAT_Relay` | Like `Relay`, but intended for the Battery measurement driver. |
+| `BAT_Relay_n` | Like `BAT_Relay`, but with inverted logic. |
+
+## Input roles
+
+These roles read the state of physical inputs — buttons and digital/analog inputs — and store the result in a linked channel.
+
+| Role | Description |
+|------|-------------|
+| `Button` | Standard active-low button (connects pin to GND when pressed; has a pull-up resistor). First linked channel toggles on click; a second linked channel (if set) toggles on double-click. |
+| `Button_n` | As `Button`, but with inverted logic. |
+| `Button_pd` | As `Button`, but with a pull-down resistor instead of a pull-up. |
+| `Button_pd_n` | As `Button_pd`, but with inverted logic. |
+| `Button_ToggleAll` | A single button that toggles all channels at once. |
+| `Button_ToggleAll_n` | As `Button_ToggleAll`, but with inverted logic. |
+| `Button_NextColor` | For LED strips with color buttons. Cycles to the next predefined color when clicked. |
+| `Button_NextColor_n` | As `Button_NextColor`, but with inverted button logic. |
+| `Button_NextDimmer` | For LED strips with brightness buttons. Adjusts brightness when held. |
+| `Button_NextDimmer_n` | As `Button_NextDimmer`, but with inverted button logic. |
+| `Button_NextTemperature` | Cycles through color temperatures when clicked. |
+| `Button_NextTemperature_n` | As `Button_NextTemperature`, but with inverted button logic. |
+| `Button_ScriptOnly` | Button that does nothing automatically — no channel is toggled. Intended for scripts that handle button events via `AddEventHandler`. |
+| `Button_ScriptOnly_n` | As `Button_ScriptOnly`, but with inverted logic. |
+| `SmartButtonForLEDs` | All-in-one LED button: single click toggles power, hold adjusts brightness, double-click cycles color, triple-click cycles color temperature. |
+| `SmartButtonForLEDs_n` | As `SmartButtonForLEDs`, but with inverted logic. |
+| `DigitalInput` | Simple digital input. Sets the linked channel to the current logical level on the pin (like `digitalRead()` in Arduino). Has an internal pull-up resistor. |
+| `DigitalInput_n` | As `DigitalInput`, but with inverted logic. |
+| `DigitalInput_NoPup` | As `DigitalInput`, but without the internal pull-up. Use for sensors (such as XR809 water sensors) that provide their own pull-up or pull-down. |
+| `DigitalInput_NoPup_n` | As `DigitalInput_NoPup`, but with inverted logic. |
+| `ToggleChannelOnToggle` | Toggles the target channel value each time the pin changes state (with debounce). Connect a two-position switch here to toggle a relay when the switch is flipped. |
+| `ToggleChannelOnToggle_pd` | Pull-down version of `ToggleChannelOnToggle`. |
+| `ADC` | Analog-to-digital converter. Reads voltage and stores the result in the linked channel. The value can be published over MQTT and used in scriptable events. |
+| `ADC_Button` | Single ADC pin with multiple buttons connected via a resistor ladder. Each button produces a unique voltage. Use `AB_Map` to configure margins, then start the `ADCButton` driver. |
+| `Counter_f` | Counts pulses on the falling edge (high-to-low transition). Each transition adds `1` to the linked channel. |
+| `Counter_r` | Counts pulses on the rising edge (low-to-high transition). |
+| `LED_WIFI` | Special LED that reflects the WiFi connection state: on = connected, slow blink = connecting, fast blink (200 ms) = access point mode. |
+| `LED_WIFI_n` | As `LED_WIFI`, but with inverted logic. |
+
+## Sensor data line roles
+
+These roles connect hardware sensors directly to GPIO pins. When all required roles for a sensor are assigned, the related driver starts automatically on boot.
+
+### Temperature and humidity sensors
+
+| Role | Description |
+|------|-------------|
+| `DHT11` | DHT11 single-wire data line. Automatically starts the DHT driver. Set two channel indices — one for temperature, one for humidity. |
+| `DHT12` | DHT12 single-wire data line. |
+| `DHT21` | DHT21 single-wire data line. |
+| `DHT22` | DHT22 single-wire data line. |
+| `SHT3X_DAT` | SHT30/31/35 sensor data pin. Driver auto-starts when both `SHT3X_DAT` and `SHT3X_CLK` are set. |
+| `SHT3X_CLK` | SHT3X sensor clock pin. |
+| `CHT83XX_DAT` | CHT8305/8310/8315 sensor data pin. Set the first related field to channel 1 (temperature) and the second to channel 2 (humidity). |
+| `CHT83XX_CLK` | CHT83XX sensor clock pin. |
+| `DS1820_IO` | Single-wire OneWire data pin for DS18B20 temperature sensors. |
+| `SGP_DAT` | SGP air quality sensor data line. Driver auto-starts when both pins are set. |
+| `SGP_CLK` | SGP sensor clock line. |
+
+### LED driver data lines
+
+| Role | Description |
+|------|-------------|
+| `SM2135_DAT` | SM2135 modified-I2C LED driver data pin. Driver auto-starts when both SM2135 pins are set. Use `SM2135_Map` afterward to correct the channel order. |
+| `SM2135_CLK` | SM2135 LED driver clock pin. |
+| `SM2235_DAT` | SM2235/SM2335 LED driver data pin. Also works for SM2185N. |
+| `SM2235_CLK` | SM2235/SM2335 LED driver clock pin. |
+| `BP5758D_DAT` | BP5758D LED driver data pin. |
+| `BP5758D_CLK` | BP5758D LED driver clock pin. |
+| `BP1658CJ_DAT` | BP1658CJ LED driver data pin. |
+| `BP1658CJ_CLK` | BP1658CJ LED driver clock pin. |
+| `KP18058_DAT` | KP18058/KP18068 LED driver data pin. |
+| `KP18058_CLK` | KP18058/KP18068 LED driver clock pin. |
+| `SM16703P_DIN` | SPI DIN data pin for SM16703P RGB LED driver. Also used for SM15155E. Call `startDriver SM16703P` or `startDriver SM15155E` after setting this role. |
+
+### I2C bus roles
+
+| Role | Description |
+|------|-------------|
+| `SOFT_SDA` | Generic software (bit-bang) I2C SDA line. Used with the advanced scriptable I2C driver for displays and port expanders. |
+| `SOFT_SCL` | Generic software I2C SCL line. |
+
+### Display module roles
+
+| Role | Description |
+|------|-------------|
+| `TM1637_DIO` | TM1637 7-segment display DIO pin. Driver auto-starts when both TM1637 pins are set. |
+| `TM1637_CLK` | TM1637 display clock pin. |
+| `GN6932_CLK` | GN6932 LED display clock pin. |
+| `GN6932_DAT` | GN6932 LED display data pin. |
+| `GN6932_STB` | GN6932 LED display STB (latch enable) pin. |
+| `TM1638_CLK` | TM1638 8×7-segment display clock pin. |
+| `TM1638_DAT` | TM1638 display data pin. |
+| `TM1638_STB` | TM1638 display STB pin. |
+
+### IR and RF roles
+
+| Role | Description |
+|------|-------------|
+| `IRRecv` | IR receiver input for the IR library. |
+| `IRRecv_nPup` | IR receiver without internal pull-up. |
+| `IRSend` | IR transmitter output for the IR library. |
+| `RCRecv` | 433 MHz RC receiver input (uses internal pull-up). |
+| `RCRecv_nPup` | 433 MHz RC receiver without pull-up. |
+
+## Power metering roles
+
+Setting all three BL0937 roles causes the BL0937 driver to start automatically. Calibrate with `VoltageSet`, `CurrentSet`, and `PowerSet` after the driver starts.
+
+| Role | Description |
+|------|-------------|
+| `BL0937_CF` | BL0937 CF (power frequency) output pin. |
+| `BL0937_CF1` | BL0937 CF1 (current/voltage selection) pin. |
+| `BL0937_SEL` | BL0937 SEL pin (active high). |
+| `BL0937_SEL_n` | BL0937 SEL pin (active low). Use one or the other, not both. |
+| `HLW8112_SCSN` | SCSN chip-select pin for HLW8112 SPI energy metering. |
+
+## Deep-sleep and battery roles
+
+| Role | Description |
+|------|-------------|
+| `DoorSensorWithDeepSleep` | Sets this pin as a door/contact sensor and auto-starts the DoorSensor driver. The device wakes on a GPIO change, reports the new state over MQTT, and returns to deep sleep when idle. |
+| `DoorSensorWithDeepSleep_NoPup` | As `DoorSensorWithDeepSleep`, but without an internal pull-up resistor. |
+| `DoorSensorWithDeepSleep_pd` | As `DoorSensorWithDeepSleep`, but with an internal pull-down resistor. |
+| `BAT_ADC` | ADC input for the Battery driver, used to measure battery voltage via a resistor divider. |
+
+## Setting pin roles in the web interface
+
+<Steps>
+  <Step title="Open pin configuration">
+    Navigate to **Config → Module Pins Configuration** in the web interface. The page shows a row for each available GPIO pin.
+  </Step>
+  <Step title="Select a role">
+    Use the dropdown in each row to choose the role for that pin. After selecting a role, additional fields may appear for channel index assignment.
+  </Step>
+  <Step title="Assign channel indices">
+    Enter the channel number in the text box next to the role. For sensors with two outputs (temperature and humidity), two fields appear. Assign each output to a separate channel.
+  </Step>
+  <Step title="Save and reboot">
+    Click **Save** to write the pin configuration to flash. Reboot the device to apply the new roles. Drivers that auto-start from pin roles will begin on the next boot.
+  </Step>
+</Steps>
+
+<Tip>
+  You can also set pin roles from the console using `SetPinRole [PinIndex] [RoleIndexOrName]` and `SetPinChannel [PinIndex] [ChannelIndex]`. This is useful for scripted provisioning, but the web interface is easier for interactive setup.
+</Tip>

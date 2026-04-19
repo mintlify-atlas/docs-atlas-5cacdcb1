@@ -1,0 +1,70 @@
+---
+title: "OpenBeken: Tasmota replacement for Tuya IoT modules"
+description: "OpenBeken is open-source firmware replacing Tuya firmware on BK7231, BL602, ESP32, RTL8710, W600/W800, and 30+ chipsets with full MQTT and Home Assistant support."
+---
+
+OpenBeken (originally OpenBK7231T) is an open-source firmware project that frees Tuya-based IoT hardware from vendor lock-in. Where the stock firmware calls home to Tuya's cloud and cannot be locally controlled, OpenBeken gives you a Tasmota-compatible interface with full MQTT support, Home Assistant auto-discovery, an advanced scripting engine, and a web-based configuration UI — all running entirely on your local network. Although the project started targeting Beken's BK7231T chip, it has grown into a multi-vendor platform supporting chips from Beken, Bouffalo Lab, Espressif, WinnerMicro, XRadio, Realtek, Lightning Semi, ESWIN, and more.
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Flash your device" icon="microchip" href="/flashing">
+    Download the correct binary and flash it using the GUI tool, UART, SPI, or OTA.
+  </Card>
+  <Card title="Initial setup" icon="gear" href="/initial-setup">
+    Connect to WiFi, assign GPIO roles, and get your device on your local network.
+  </Card>
+  <Card title="MQTT and Home Assistant" icon="house-signal" href="/connectivity/mqtt-setup">
+    Configure your MQTT broker and enable Home Assistant auto-discovery.
+  </Card>
+  <Card title="Command reference" icon="terminal" href="/reference/commands">
+    Browse the full list of console commands for controlling channels and drivers.
+  </Card>
+</CardGroup>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="30+ supported chipsets" icon="cpu">
+    Beken BK7231T/N/M/S/U/238/252, Bouffalo Lab BL602/616, Espressif ESP32 (all variants) and ESP8266, WinnerMicro W600/W800/W801, XRadio XR809/XR806, Realtek RTL8710B/C/D and AmebaDplus, Lightning Semi LN882H, ESWIN ECR6600, and more.
+  </Card>
+  <Card title="MQTT and Home Assistant" icon="broadcast-tower">
+    Full MQTT compatibility with both a YAML generator and automatic HA Discovery. Works with ioBroker, Tasmota Control app, and any MQTT-capable platform.
+  </Card>
+  <Card title="TuyaMCU protocol" icon="plug">
+    Dedicated TuyaMCU support for communicating with the co-processor on dimmers, fans, and battery-powered door and water sensors.
+  </Card>
+  <Card title="RGBCW LED control" icon="lightbulb">
+    Control PWM LEDs and SPI LED drivers including SM2135, BP5758, SM15155, and WS2812B addressable strips — fully integrated with Home Assistant light entities.
+  </Card>
+  <Card title="Power metering" icon="bolt">
+    Driver support for BL0942, BL0937, and other energy-metering chips with per-device calibration.
+  </Card>
+  <Card title="Advanced scripting" icon="code">
+    Event handlers, repeating timers, NTP clock events, and LittleFS-based scripts let you mirror any Tasmota rule and automate complex behaviors.
+  </Card>
+  <Card title="I2C and SPI peripherals" icon="microchip">
+    Hardware and software I2C for sensors (AHT30, BME680, DS18B20, BMP280), port expanders (MCP23017), and LCD displays (PCF8574T 2×16).
+  </Card>
+  <Card title="OTA firmware updates" icon="arrow-up-circle">
+    After the first flash, update firmware over Wi-Fi by dragging and dropping the OTA file onto the web application — no cables required.
+  </Card>
+</CardGroup>
+
+## Device template database
+
+OpenBeken maintains a community-driven device template database with more than 800 entries. When you open the web application on a freshly flashed device, you can search the database and apply a template that pre-configures all GPIO roles for your specific hardware — no manual pin mapping required. The database is also accessible directly from the firmware without leaving the device's web UI.
+
+## Tasmota compatibility
+
+<Note>
+  OpenBeken supports the common Tasmota JSON command format over HTTP and MQTT, including TELE, STAT, and CMND topic namespaces. Existing Tasmota rules, ioBroker flows, and Home Assistant MQTT configurations generally work without modification.
+</Note>
+
+## Supported platforms overview
+
+OpenBeken runs on hardware from at least eight silicon vendors. See the [supported platforms](/supported-platforms) page for the full feature matrix covering GPIO, OTA, PWM, ADC, deep sleep, SPI LED, IR, and Bluetooth support across every chip.
+
+## Building from source
+
+Pre-built binaries for every supported platform are published on the GitHub Releases tab. If you need a custom build — for example to enable Berry scripting or adjust partition layout — see the [building guide](/advanced/building) for Docker and manual build instructions.

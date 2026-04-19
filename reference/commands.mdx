@@ -1,0 +1,763 @@
+---
+title: "OpenBeken console command reference"
+description: "Complete reference for all OpenBeken console commands, covering channels, LED control, events, timers, MQTT publishing, sensors, and system operations."
+---
+
+OpenBeken exposes a rich command interface through the web console, the TCP command server, MQTT (`cmnd/DEVICE/COMMAND`), and HTTP (`/cm?cmnd=...`). Commands are grouped into logical categories below. The full command list is auto-generated from the firmware source by running `node scripts/getcommands.js` — every description here comes directly from code comments. Some commands require a driver to be started first (for example, `startDriver DoorSensor` before using `DSEdge`). You can chain multiple commands using `backlog`, and commands placed in `autoexec.bat` on LittleFS run automatically at every boot.
+
+<Note>
+  Commands sent over MQTT use the topic `cmnd/OBK_DEVICE_NAME/COMMAND_TEXT` with `COMMAND_ARGUMENTS` as the payload — the same pattern as Tasmota.
+</Note>
+
+## Channel and relay commands
+
+These commands read and write the device's internal channel values. Channels are the fundamental unit of state in OpenBeken — relays, PWM outputs, and sensor readings all map to channel indices.
+
+<AccordionGroup>
+  <Accordion title="SetChannel — set a channel to a value">
+    **Syntax:** `SetChannel [ChannelIndex] [ChannelValue]`
+
+    Sets a raw channel to a given integer value. Relay channels use `1` (on) and `0` (off). PWM channels accept values in the `[0, 100]` range. Do not use this for LED control — use `led_basecolor_rgb`, `led_dimmer`, or `Color` instead, as the LED driver has its own state memory.
+
+    ```bash
+    SetChannel 1 1      # turn relay on channel 1 on
+    SetChannel 2 0      # turn relay on channel 2 off
+    SetChannel 3 75     # set PWM channel 3 to 75%
+    ```
+  </Accordion>
+
+  <Accordion title="GetChannel — read a channel value">
+    **Syntax:** `GetChannel [ChannelIndex]`
+
+    Prints the current value of the specified channel to the console.
+
+    ```bash
+    GetChannel 1
+    ```
+  </Accordion>
+
+  <Accordion title="Ch — alternate channel access">
+    **Syntax:** `ChINDEX [value]`
+
+    An alternate way to access channels. There is no space between `Ch` and the index. Without a value argument, returns all used channels as JSON.
+
+    ```bash
+    Ch1 1       # set channel 1 to 1
+    Ch2         # poll channel 2 value
+    ```
+  </Accordion>
+
+  <Accordion title="ToggleChannel — toggle a channel">
+    **Syntax:** `ToggleChannel [ChannelIndex]`
+
+    Toggles the given channel. A non-zero value becomes `0`; zero becomes `1`.
+
+    ```bash
+    ToggleChannel 1
+    ```
+  </Accordion>
+
+  <Accordion title="AddChannel — add a value to a channel">
+    **Syntax:** `AddChannel [ChannelIndex] [ValueToAdd] [ClampMin] [ClampMax] [bWrapInsteadOfClamp]`
+
+    Adds a value to the given channel. Optional clamp min/max arguments limit the result range. Set the wrap flag to `1` to wrap around instead of clamping.
+
+    ```bash
+    AddChannel 3 10 0 100   # add 10 to channel 3, clamped to [0, 100]
+    ```
+  </Accordion>
+
+  <Accordion title="ClampChannel — clamp a channel to a range">
+    **Syntax:** `ClampChannel [ChannelIndex] [Min] [Max]`
+
+    Clamps the given channel value to the specified range.
+  </Accordion>
+
+  <Accordion title="power / powerAll — Tasmota-style power control">
+    **Syntax:** `power [on|off|toggle]`
+
+    Tasmota-style POWER command. Works for both LED and relay devices. Use `POWER0`, `POWER1`, etc. to address specific relay channels.
+
+    ```bash
+    power toggle
+    power1 on
+    power2 off
+    ```
+  </Accordion>
+
+  <Accordion title="SetChannelLabel — label a channel">
+    **Syntax:** `SetChannelLabel [ChannelIndex] [Label] [bHideTogglePrefix]`
+
+    Sets a display label for the channel used in the web UI and as the default entity name in Home Assistant discovery. Set `bHideTogglePrefix` to `1` to omit the "Toggle" prefix from the button label.
+  </Accordion>
+
+  <Accordion title="setChannelType — set channel display type">
+    **Syntax:** `setChannelType [ChannelIndex] [TypeString]`
+
+    Sets a custom type for a channel that determines how its value is displayed in the GUI.
+  </Accordion>
+
+  <Accordion title="SetChannelPrivate — hide a channel from MQTT">
+    **Syntax:** `SetChannelPrivate [ChannelIndex] [bPrivate]`
+
+    Channels marked as private are never published via MQTT and are excluded from Home Assistant discovery.
+  </Accordion>
+
+  <Accordion title="SetStartValue — set the startup channel value">
+    **Syntax:** `SetStartValue [Channel] [Value]`
+
+    Sets the startup value for a channel. Use `1` for high, `0` for low, and `-1` to remember the last state (power-on restore).
+  </Accordion>
+
+  <Accordion title="Map and MapRanges — value mapping">
+    **`Map` syntax:** `Map [TargetChannel] [InputValue] [InMin] [InMax] [OutMin] [OutMax]`
+
+    Converts a value from one range to a proportional value in another range and writes the result to the target channel.
+
+    **`MapRanges` syntax:** `MapRanges [TargetChannel] [InputValue] [RangeVal0] [RangeVal1] ... [RangeValN]`
+
+    Sets the target channel to the index of the range section where the input value falls. For example, `MapRanges 10 0.5 0.3 0.6 0.9` sets channel 10 to `1` because `0.5` is between `0.3` and `0.6`.
+  </Accordion>
+
+  <Accordion title="showChannelValues — log all channel values">
+    Logs all current channel values to the console. Useful for debugging.
+  </Accordion>
+</AccordionGroup>
+
+## LED commands
+
+These commands control the LED driver, which manages RGBCW state, dimming, temperature, and color transitions. The LED driver maintains its own state separately from raw channels.
+
+<AccordionGroup>
+  <Accordion title="Color / led_basecolor_rgb — set RGB color">
+    **Syntax:** `Color [HexValue]` or `led_basecolor_rgb [HexValue]`
+
+    Puts the LED driver into RGB mode and sets the given hex color. Both commands are equivalent; `Color` follows Tasmota naming.
+
+    ```bash
+    Color FF0000      # pure red
+    led_basecolor_rgb 00FF80
+    ```
+  </Accordion>
+
+  <Accordion title="led_basecolor_rgbcw — set full RGBCW color">
+    **Syntax:** `led_basecolor_rgbcw [HexValue]`
+
+    Sets PWM color using the `#RRGGBB[cw][ww]` format, controlling all five RGBCW channels at once.
+  </Accordion>
+
+  <Accordion title="Dimmer / led_dimmer — set brightness">
+    **Syntax:** `Dimmer [Value]` or `led_dimmer [Value]`
+
+    Sets the LED dimmer from `0` to `100`. `Dimmer` is an alias added for Tasmota compatibility.
+
+    ```bash
+    led_dimmer 80
+    Dimmer 50
+    ```
+  </Accordion>
+
+  <Accordion title="add_dimmer — adjust brightness by delta">
+    **Syntax:** `add_dimmer [Value] [AddMode]`
+
+    Adds a given value to the current LED dimmer. `AddMode 0` clamps at `[0, 100]`; `AddMode 1` wraps (100→0, 0→100); `AddMode 2` ping-pongs the value.
+  </Accordion>
+
+  <Accordion title="CT / led_temperature — set color temperature">
+    **Syntax:** `CT [TempValue]` or `led_temperature [TempValue]`
+
+    Switches the LED driver to temperature mode and sets the color temperature in the Home Assistant range (154–500, matching `HASS_COLOR_MIN`/`HASS_COLOR_MAX`).
+
+    ```bash
+    CT 300
+    led_temperature 154    # coolest white
+    led_temperature 500    # warmest white
+    ```
+  </Accordion>
+
+  <Accordion title="CTRange — configure temperature display range">
+    **Syntax:** `CTRange [MinRange] [MaxRange]`
+
+    Overrides the default color temperature display range. Default is `154-500`.
+  </Accordion>
+
+  <Accordion title="HSBColor — hue/saturation/brightness control">
+    **Syntax:** `HSBColor [H] [S] [B]`
+
+    Sets color using hue (0–360), saturation (0–100), and brightness (0–100). Individual components can be set with `HSBColor1` (hue), `HSBColor2` (saturation), and `HSBColor3` (brightness).
+  </Accordion>
+
+  <Accordion title="led_hue / led_saturation — alternate color control">
+    **`led_hue [Value]`** and **`led_saturation [Value]`** provide alternate ways to set the hue and saturation of the LED color independently.
+  </Accordion>
+
+  <Accordion title="led_enableAll — power LED on/off">
+    **Syntax:** `led_enableAll [1|0|Toggle]`
+
+    Powers the LED on or off while preserving the current RGBCW values. The state is tracked separately from the color.
+
+    ```bash
+    led_enableAll 1
+    led_enableAll Toggle
+    ```
+  </Accordion>
+
+  <Accordion title="led_dimmerScale — cap maximum brightness">
+    **Syntax:** `led_dimmerScale [Scale]`
+
+    Accepts a value in `[0, 1]`. When set to `0.8`, a dimmer value of 100% results in only 80% PWM duty, reducing heat and prolonging LED life.
+  </Accordion>
+
+  <Accordion title="led_lerpSpeed — smooth color transitions">
+    **Syntax:** `led_lerpSpeed [LerpSpeed]`
+
+    Sets the speed of color interpolation in RGB units per second. A value of `255` transitions from `0` to `255` in one second. Requires the smooth transitions flag (flag 18) to be enabled.
+  </Accordion>
+
+  <Accordion title="led_finishFullLerp — skip transition animation">
+    Forces the LED color interpolation to complete immediately, jumping to the final color without the smooth transition.
+  </Accordion>
+
+  <Accordion title="led_saveInterval — control flash save frequency">
+    **Syntax:** `led_saveInterval [IntervalSeconds]`
+
+    Controls how often LED state is saved to flash. Increase this value if you change LED state frequently (for example, via xLights) to reduce flash wear.
+  </Accordion>
+
+  <Accordion title="led_nextColor — cycle predefined colors">
+    Advances to the next color from the predefined color list (same list as Tasmota).
+  </Accordion>
+
+  <Accordion title="led_gammaCtrl — gamma correction">
+    **Syntax:** `led_gammaCtrl [sub-cmd] [par]`
+
+    Controls LED gamma correction and calibration. Example: `led_gammaCtrl on`
+  </Accordion>
+
+  <Accordion title="Anim / AnimSpeed — WS2812B animations">
+    **`Anim [AnimationIndex]`** — starts a WS2812B animation by index.
+
+    **`AnimSpeed [Interval]`** — sets the animation speed.
+  </Accordion>
+
+  <Accordion title="SPC — set palette color">
+    **Syntax:** `SPC [Index] [RGB]`
+
+    Sets a palette color entry by index.
+  </Accordion>
+
+  <Accordion title="SM16703P commands — SPI LED strip control">
+    | Command | Syntax | Description |
+    |---------|--------|-------------|
+    | `SM16703P_Init` | `[NumberOfLEDs] [ColorOrder]` | Configure the strip. Color order is any combination of R, G, B, C, W (default: RGB). Also works for WS2812B. |
+    | `SM16703P_SetPixel` | `[index/all] [R] [G] [B]` | Set a specific pixel or all pixels by RGB value. |
+    | `SM16703P_SetRaw` | `[bUpdate] [byteOfs] [HexData]` | Write raw bytes to the SPI DMA buffer. |
+    | `SM16703P_Start` | — | Flush the current data to the strip. |
+  </Accordion>
+</AccordionGroup>
+
+## Event and timer commands
+
+These commands schedule recurring work, react to channel changes, and enable time-based automation. They are the foundation of OpenBeken's scripting system.
+
+<AccordionGroup>
+  <Accordion title="addRepeatingEvent — interval timer">
+    **Syntax:** `addRepeatingEvent [IntervalSeconds] [RepeatsOr-1] [CommandToRun]`
+
+    Starts a repeating timer. Set `RepeatsOr-1` to `-1` for an infinite loop. Use `backlog` to run multiple commands per tick.
+
+    ```bash
+    # Toggle relay every 5 seconds, indefinitely
+    addRepeatingEvent 5 -1 ToggleChannel 1
+
+    # Run 10 times then stop
+    addRepeatingEvent 2 10 publishAll
+    ```
+  </Accordion>
+
+  <Accordion title="addRepeatingEventID / addRepeatingEventUID — named timers">
+    **`addRepeatingEventID` syntax:** `[IntervalSeconds] [RepeatsOr-1] [UserID] [CommandToRun]`
+
+    Like `addRepeatingEvent` but assigns a numeric ID so the event can be cancelled with `cancelRepeatingEvent`.
+
+    **`addRepeatingEventUID`** additionally cancels any existing event with the same ID before starting a new one, preventing duplicate timers.
+
+    ```bash
+    addRepeatingEventID 2 -1 123 Power0 Toggle
+    cancelRepeatingEvent 123
+    ```
+  </Accordion>
+
+  <Accordion title="cancelRepeatingEvent — stop a named timer">
+    **Syntax:** `cancelRepeatingEvent [UserIDInteger]`
+
+    Stops the repeating event that was started with the given ID.
+  </Accordion>
+
+  <Accordion title="clearRepeatingEvents — remove all timers">
+    Removes all active repeating events at once.
+  </Accordion>
+
+  <Accordion title="listRepeatingEvents — view active timers">
+    Prints a list of all currently active repeating events.
+  </Accordion>
+
+  <Accordion title="AddEventHandler — react to button events">
+    **Syntax:** `AddEventHandler [EventName] [EventArgument] [CommandToRun]`
+
+    Triggers a command in response to events such as button click, long press, or double click.
+
+    ```bash
+    AddEventHandler OnClick 1 ToggleChannel 1
+    ```
+  </Accordion>
+
+  <Accordion title="AddChangeHandler — react to value changes">
+    **Syntax:** `AddChangeHandler [Variable] [Relation] [Constant] [Command]`
+
+    Triggers a command when a channel value or power-metering reading crosses a threshold. Supports `==`, `!=`, `>=`, `<=`, `>`, `<`. Variable names are `Channel0`, `Channel1`, etc., or `Power`, `Current`, `Voltage`, `Frequency` for energy metering.
+
+    ```bash
+    # Fire when current exceeds 2 A (value stored as mA × 1000)
+    AddChangeHandler Current > 2000 SetChannel 1 0
+
+    # Fire when channel 2 equals 100
+    AddChangeHandler Channel2 == 100 publish alert high
+    ```
+  </Accordion>
+
+  <Accordion title="addClockEvent — schedule by time of day">
+    **Syntax:** `addClockEvent [TimerSeconds|HH:mm|sunrise|sunset] [WeekDayFlags] [UniqueID] [Command]`
+
+    Schedules a command to run at a specific time of day on selected weekdays. Requires the NTP driver to be running. `WeekDayFlags` is a bitmask: `0xFF` for every day, `0x02` for Monday only, etc. `sunrise`/`sunset` requires compile-time support.
+
+    ```bash
+    # Turn on at 07:00 every day
+    addClockEvent 07:00 0xFF 1 SetChannel 1 1
+
+    # Turn off at 23:00 on weekdays (Mon–Fri = 0x3E)
+    addClockEvent 23:00 0x3E 2 SetChannel 1 0
+    ```
+  </Accordion>
+
+  <Accordion title="clearClockEvents / removeClockEvent / listClockEvents">
+    - **`clearClockEvents`** — removes all scheduled clock events.
+    - **`removeClockEvent [ID]`** — removes one event by its unique ID.
+    - **`listClockEvents`** — prints the full list of scheduled events.
+  </Accordion>
+
+  <Accordion title="clearAllHandlers / listEventHandlers">
+    - **`clearAllHandlers`** — removes all added event handlers.
+    - **`listEventHandlers`** — prints the full handler list.
+  </Accordion>
+
+  <Accordion title="backlog — run multiple commands in sequence">
+    **Syntax:** `backlog [cmd1; cmd2; cmd3]`
+
+    Runs a semicolon-separated sequence of commands. This is the standard way to combine multiple commands in a startup line or script.
+
+    ```bash
+    backlog startDriver NTP; ntp_setServer pool.ntp.org; ntp_timeZoneOfs 1
+    ```
+  </Accordion>
+
+  <Accordion title="if — conditional execution">
+    **Syntax:** `if [Condition] then [CommandA] else [CommandB]`
+
+    Executes a conditional branch. The `else` clause is optional. Use aliases or quoted strings for commands that contain spaces.
+
+    ```bash
+    if $CH1==1 then SetChannel 2 1 else SetChannel 2 0
+    ```
+  </Accordion>
+
+  <Accordion title="Choice — index-based command selection">
+    **Syntax:** `Choice [IndexToExecute] [Option0] [Option1] ... [OptionN]`
+
+    Picks and executes one argument by its index. The index can be a variable like `$CH1`.
+  </Accordion>
+
+  <Accordion title="waitFor — script blocking wait">
+    **Syntax:** `waitFor [EventName] [Argument]`
+
+    Script-only command. Blocks the current script thread until the named event fires with the given argument. Example: `waitFor MQTTState 1` or `waitFor NTPState 1`.
+  </Accordion>
+</AccordionGroup>
+
+## Script execution commands
+
+<AccordionGroup>
+  <Accordion title="startScript / stopScript / stopAllScripts">
+    - **`startScript [FileName] [Label] [UniqueID]`** — starts a script thread from a LittleFS file at the specified label (`*` for whole file) with a given unique ID.
+    - **`stopScript [UniqueID]`** — force-stops a script thread by its ID.
+    - **`stopAllScripts`** — stops all running script threads.
+  </Accordion>
+
+  <Accordion title="exec — run a file">
+    **Syntax:** `exec [Filename]`
+
+    Runs a file from LittleFS. Used to execute `autoexec.bat` or any custom script file.
+  </Accordion>
+
+  <Accordion title="goto — jump to a label">
+    **Syntax:** `goto [LabelStr]` or `goto [File] [LabelStr]`
+
+    Script-only command. Jumps to a label within the current script, or to a label in another file.
+  </Accordion>
+
+  <Accordion title="return — exit script thread">
+    Script-only command. Stops the current script thread.
+  </Accordion>
+
+  <Accordion title="delay_ms / delay_s — pause script">
+    - **`delay_ms [ValueMS]`** — pauses the current thread for the given milliseconds.
+    - **`delay_s [ValueSeconds]`** — pauses for the given seconds (supports floats like `0.5`).
+  </Accordion>
+
+  <Accordion title="alias / aliasMem — create command aliases">
+    **Syntax:** `alias [Alias] [Command with spaces]`
+
+    Creates a short alias for a command that contains spaces, so the alias can be used as a single token in scripts and `if` conditions.
+  </Accordion>
+
+  <Accordion title="listScripts — show running scripts">
+    Lists all currently running script threads.
+  </Accordion>
+
+  <Accordion title="resetSVM — clear all scripts">
+    Resets the script virtual machine and clears all running scripts.
+  </Accordion>
+
+  <Accordion title="echo — print with variable expansion">
+    **Syntax:** `echo [Message]`
+
+    Sends a message to the console with variable expansion. `$CH12` prints the value of channel 12, `$led_dimmer` the current LED brightness, etc.
+  </Accordion>
+</AccordionGroup>
+
+## MQTT commands
+
+<AccordionGroup>
+  <Accordion title="publish / publishInt / publishFloat — send MQTT messages">
+    **`publish [Topic] [Value] [bSkipPrefixAndSuffix]`** — publishes a value under `OBK_DEVICE/Topic/get`. Set the third argument to `1` to publish to a raw topic without the device prefix or `/get` suffix.
+
+    **`publishInt`** and **`publishFloat`** work the same way but support math expressions on the value (`$CH10 * 10`, etc.).
+
+    ```bash
+    publish temperature $CH5
+    publishFloat energy $energy
+    publishInt alert $CH1*100
+    ```
+  </Accordion>
+
+  <Accordion title="publishFile — publish file contents">
+    **Syntax:** `publishFile [Topic] [Value] [bSkipPrefixAndSuffix]`
+
+    Publishes the contents of a LittleFS file as the MQTT payload.
+  </Accordion>
+
+  <Accordion title="publishChannel / publishChannels / publishAll">
+    - **`publishChannel [ChannelIndex]`** — forces a publish of a single channel.
+    - **`publishChannels`** — publishes all channel values step by step.
+    - **`publishAll`** — publishes all available values step by step.
+  </Accordion>
+
+  <Accordion title="mqtt_broadcastInterval — adjust periodic publish interval">
+    **Syntax:** `mqtt_broadcastInterval [ValueSeconds]`
+
+    Changes the periodic state broadcast interval from the default 60 seconds to any other value. This value is not saved to flash — add it to `autoexec.bat` or the short startup command.
+  </Accordion>
+
+  <Accordion title="mqtt_broadcastItemsPerSec — throttle publish rate">
+    **Syntax:** `mqtt_broadcastItemsPerSec [PublishCountPerSecond]`
+
+    Controls how many items are published per second during a periodic broadcast. Do not set too high — the LWIP MQTT library has throughput limits.
+  </Accordion>
+
+  <Accordion title="MqttHost / MqttUser / MqttPassword / MqttClient / MqttGroup">
+    Configure MQTT connection parameters using Tasmota-compatible syntax:
+
+    ```bash
+    MqttHost 192.168.1.10
+    MqttUser myuser
+    MqttPassword secret
+    MqttClient obk_living_room
+    MqttGroup mygroup
+    ```
+  </Accordion>
+
+  <Accordion title="scheduleHADiscovery — trigger Home Assistant discovery">
+    **Syntax:** `scheduleHADiscovery [Seconds]`
+
+    Schedules a Home Assistant MQTT discovery publish after the given number of seconds. The timer only counts while MQTT is connected.
+  </Accordion>
+</AccordionGroup>
+
+## System commands
+
+<AccordionGroup>
+  <Accordion title="restart / reboot — reboot the device">
+    **`restart`** — reboots the module.
+
+    **`reboot`** — identical to `restart`; included for compatibility with bkWriter 1.60.
+  </Accordion>
+
+  <Accordion title="clearConfig — factory reset">
+    Clears all configuration, including WiFi credentials. The device returns to AP mode after reboot.
+  </Accordion>
+
+  <Accordion title="clearAll — full state reset">
+    Clears config and all runtime state including scripts, events, and handlers.
+  </Accordion>
+
+  <Accordion title="clearIO — reset pin configuration">
+    Clears all pin role and channel assignments.
+  </Accordion>
+
+  <Accordion title="SafeMode — force safe mode">
+    **Syntax:** `SafeMode [OptionalDelaySeconds]`
+
+    Forces a reboot into safe mode (open AP, no drivers, no scripts).
+  </Accordion>
+
+  <Accordion title="loglevel — set log verbosity">
+    **Syntax:** `loglevel [Value]`
+
+    Sets the log verbosity level from `0` to `7`. Default is `3` (INFO). Level `4` includes DEBUG; level `5` includes EXTRADEBUG. You must also set the web panel log filter to **All** for the extra logs to appear.
+
+    ```bash
+    loglevel 4
+    ```
+  </Accordion>
+
+  <Accordion title="FriendlyName / ShortName — device naming">
+    - **`FriendlyName [Name]`** — sets the full device display name.
+    - **`ShortName [Name]`** — sets the short name used as the MQTT topic prefix.
+  </Accordion>
+
+  <Accordion title="SetFlag / flags — configure flags">
+    - **`SetFlag [FlagIndex] [0or1]`** — sets a single configuration flag.
+    - **`flags [IntegerValue]`** — sets all flags at once from a bitmask integer.
+
+    See the [flags reference](/reference/flags) for the complete list.
+  </Accordion>
+
+  <Accordion title="startDriver / stopDriver — manage drivers">
+    - **`startDriver [DriverName]`** — starts the named driver.
+    - **`stopDriver [DriverName]`** — stops the named driver.
+
+    ```bash
+    startDriver NTP
+    startDriver BL0942
+    stopDriver TuyaMCU
+    ```
+  </Accordion>
+
+  <Accordion title="StartupCommand — set the short startup command">
+    **Syntax:** `StartupCommand ["Command"] [bRunAfter]`
+
+    Sets the startup command stored in config. If `bRunAfter` is `1`, also executes the command immediately.
+  </Accordion>
+
+  <Accordion title="ota_http — HTTP OTA update">
+    **Syntax:** `ota_http [HTTP_URL]`
+
+    Starts firmware update from an HTTP URL. Must use HTTP (not HTTPS). Use the correct OTA file for your platform (`.rbl` for BK7231, `.bin.xz.ota` for BL602, etc.).
+
+    ```bash
+    ota_http http://192.168.1.50/firmware.rbl
+    ```
+  </Accordion>
+
+  <Accordion title="DeepSleep / PinDeepSleep — power saving">
+    - **`DeepSleep [Seconds]`** — puts the device into deep sleep for the given number of seconds.
+    - **`PinDeepSleep [OptionalTimerSeconds]`** — deep sleep that wakes on a GPIO event (requires a `DoorSensor` pin role). An optional timer provides a fallback wakeup.
+  </Accordion>
+
+  <Accordion title="PowerSave — dynamic power saving">
+    **Syntax:** `PowerSave [1|0]`
+
+    Enables or disables dynamic power saving mode. On LN882H, `PowerSave 2` provides deeper sleep. `PowerSave 0` disables it.
+  </Accordion>
+
+  <Accordion title="sendGet / sendPOST — HTTP requests">
+    - **`sendGet [TargetURL]`** — sends an HTTP GET to the URL. Supports variable expansion (`$CH11`, etc.).
+    - **`sendPOST [TargetURL] [Port] [ContentType] [PostContent]`** — sends an HTTP POST.
+  </Accordion>
+
+  <Accordion title="OpenAP — open access point temporarily">
+    Temporarily disconnects from the configured WiFi network and opens an access point. Useful for recovery without a full reset.
+  </Accordion>
+
+  <Accordion title="uartInit / uartSendASCII / uartSendHex — UART control">
+    - **`uartInit [BaudRate]`** — manually initializes UART1 (not needed for TuyaMCU/BL0942 which auto-init).
+    - **`uartSendASCII [String]`** — sends an ASCII string over UART.
+    - **`uartSendHex [HexString]`** — sends raw hex bytes over UART.
+  </Accordion>
+
+  <Accordion title="lfs_* — LittleFS file operations">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `lfs_write` | `[FileName] [String]` | Overwrites a file with a new string. |
+    | `lfs_writeLine` | `[FileName] [String]` | Overwrites a file with a string plus newline. |
+    | `lfs_append` | `[FileName] [String]` | Appends a string to a file. |
+    | `lfs_appendLine` | `[FileName] [String]` | Appends a string with newline. |
+    | `lfs_appendInt` | `[FileName] [Int]` | Appends an integer to a file. |
+    | `lfs_appendFloat` | `[FileName] [Float]` | Appends a float to a file. |
+    | `lfs_remove` | `[FileName]` | Deletes a file. |
+    | `lfs_format` | — | Unmounts and formats the LittleFS partition. |
+    | `lfs_mount` / `lfs_unmount` | — | Mount or unmount LittleFS. |
+    | `lfs_size` | `[MaxSize]` | Logs or sets the LittleFS partition size. |
+  </Accordion>
+</AccordionGroup>
+
+## Sensor commands
+
+Sensor commands require the related driver to be started first. Many sensor drivers start automatically when you set the correct pin roles in the GPIO configuration.
+
+<AccordionGroup>
+  <Accordion title="AHT2X commands — AHT10/AHT20/AHT30 temperature and humidity">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `AHT2X_Calibrate` | `[DeltaTemp] [DeltaHumidity]` | Calibration offset. Example: `AHT2X_Calibrate -4 10` |
+    | `AHT2X_Cycle` | `[IntervalSeconds]` | Measurement interval (default: 1 s, max: 255 s) |
+    | `AHT2X_Measure` | — | Trigger a one-shot measurement |
+    | `AHT2X_Reinit` | — | Reinitialize the sensor |
+  </Accordion>
+
+  <Accordion title="BMPI2C commands — BMP085/180/280, BME280/68X">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `BMPI2C_Calibrate` | `[DeltaTemp] [DeltaPressure] [DeltaHumidity]` | Calibration offsets |
+    | `BMPI2C_Cycle` | `[IntervalSeconds]` | Measurement interval |
+    | `BMPI2C_Configure` | `[Mode] [TempSampling] [PressureSampling] [HumSampling] [IIRFilter] [StandbyTime]` | Full sensor configuration |
+  </Accordion>
+
+  <Accordion title="CHT commands — CHT8305/8310/8315 temperature and humidity">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `CHT_Calibrate` | `[DeltaTemp] [DeltaHumidity]` | Calibration offset |
+    | `CHT_Cycle` | `[IntervalSeconds]` | Measurement interval |
+    | `CHT_Alert` | `[TempDiff] [HumDiff] [Freq] [FQ]` | Configure alert pin |
+  </Accordion>
+
+  <Accordion title="SHT3X commands — SHT30/31/35 humidity and temperature">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `SHT_Calibrate` | `[DeltaTemp] [DeltaHumidity]` | Calibration offset |
+    | `SHT_cycle` | `[IntervalSeconds]` | Measurement interval (default: 10 s) |
+    | `SHT_Measure` | — | One-shot measurement |
+    | `SHT_Heater` | `[1or0]` | Enable/disable internal heater |
+    | `SHT_GetStatus` | — | Read sensor status register |
+    | `SHT_SetAlert` | `[temp_high] [temp_low] [hum_high] [hum_low]` | Alert thresholds |
+  </Accordion>
+
+  <Accordion title="SGP commands — SGP air quality sensor">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `SGP_cycle` | `[IntervalSeconds]` | Measurement interval |
+    | `SGP_GetBaseline` | — | Read current baseline |
+    | `SGP_GetVersion` | — | Read sensor firmware version |
+    | `SGP_SoftReset` | — | I2C soft reset |
+  </Accordion>
+
+  <Accordion title="DS1820 commands — OneWire temperature sensor">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `DS1820_SetResolution` | `[9-12]` | Set bit resolution |
+    | `DS1820_FULL_scansensors` | — | Scan all GPIOs for DS18B20 sensors |
+    | `DS1820_FULL_setsensor` | `[Addr] [Name] [Channel]` | Name a sensor and assign it a channel |
+    | `DS1820_FULL_SetResolution` | `[9-12]` | Set resolution for all sensors |
+  </Accordion>
+
+  <Accordion title="MCP9808 commands — I2C temperature sensor with alert">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `MCP9808_Adr` | `[HexAddr]` | Set I2C address |
+    | `MCP9808_Calibrate` | `[DeltaTemperature]` | Calibration offset |
+    | `MCP9808_Cycle` | `[IntervalSeconds]` | Measurement interval |
+    | `MCP9808_AlertMin` | `[MinT] [bActiveHigh]` | Temperature alert (min mode) |
+    | `MCP9808_AlertRange` | `[MinT] [MaxT] [bActiveHigh]` | Temperature alert (range mode) |
+  </Accordion>
+
+  <Accordion title="LTR_ALS commands — LTR-303/329 ambient light sensor">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `LTR_ALS` | `[gain] [integration] [repeat]` | Configure gain, integration time, and repeat rate |
+    | `LTR_Cycle` | `[IntervalSeconds]` | Measurement interval |
+    | `LTR_INT` | `[enable] [als_low] [als_high] [persistance]` | Configure interrupt thresholds |
+  </Accordion>
+
+  <Accordion title="Power metering calibration commands">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `VoltageSet` | `[Voltage]` | Calibrate voltage reading |
+    | `CurrentSet` | `[Current]` | Calibrate current reading |
+    | `PowerSet` | `[Power]` | Calibrate power reading |
+    | `EnergyCntReset` | `[OptionalValue]` | Reset the energy counter |
+    | `VCPPrecision` | `[V] [A] [W] [Wh] [Hz]` | Set decimal digits for each value |
+    | `VCPPublishThreshold` | `[V] [A] [W] [Wh] [Hz]` | Minimum change required to publish |
+    | `VCPPublishIntervals` | `[MinDelay] [ForcedInterval]` | Control publish rate |
+    | `GetReadings` | — | Print voltage/current/power to console |
+  </Accordion>
+</AccordionGroup>
+
+## NTP and time commands
+
+<AccordionGroup>
+  <Accordion title="NTP server and time zone">
+    | Command | Arguments | Description |
+    |---------|-----------|-------------|
+    | `ntp_setServer` | `[ServerIP]` | Set the NTP server address |
+    | `ntp_timeZoneOfs` / `time_setTZ` | `[HH:MM]` | Set timezone offset. Use `-5:30` syntax for negative values. |
+    | `ntp_info` | — | Display current NTP settings |
+    | `time_setLatLong` | `[Lat] [Long]` | Set location for sunrise/sunset calculations |
+    | `time_setDST` | See docs | Configure daylight saving time rules |
+  </Accordion>
+</AccordionGroup>
+
+## TuyaMCU commands
+
+<AccordionGroup>
+  <Accordion title="linkTuyaMCUOutputToChannel — map dpIDs to channels">
+    **Syntax:** `linkTuyaMCUOutputToChannel [dpId] [varType] [channelID] [obkFlags] [mult] [bInverse] [delta]`
+
+    Maps a TuyaMCU data point ID to an OpenBeken channel. VarTypes: `0` raw, `1` bool, `2` value, `3` string, `4` enum, `5` bitmap. The `mult`, `bInverse`, and `delta` arguments are for calibration and are optional.
+
+    ```bash
+    # Map dpID 1 (bool) to channel 1 (relay)
+    linkTuyaMCUOutputToChannel 1 1 1
+
+    # Map dpID 3 (value) to channel 3 (dimmer) with multiplier
+    linkTuyaMCUOutputToChannel 3 2 3
+    ```
+  </Accordion>
+
+  <Accordion title="tuyaMcu_setBaudRate — change UART speed">
+    **Syntax:** `tuyaMcu_setBaudRate [BaudValue]`
+
+    Changes the TuyaMCU UART baud rate (default: 9600). Common values are `9600` and `115200`. Must be called after `startDriver TuyaMCU` and placed in `autoexec.bat` to persist across reboots.
+  </Accordion>
+
+  <Accordion title="tuyaMcu_defWiFiState — fix button/beep issues">
+    Sets the default WiFi state reported to the MCU when not fully connected. Some devices ignore buttons or beep when they believe WiFi is not paired. Set to `4` to tell the MCU it is always fully online.
+  </Accordion>
+
+  <Accordion title="Other TuyaMCU commands">
+    | Command | Description |
+    |---------|-------------|
+    | `tuyaMcu_sendCmd [CmdIndex] [HexPayload]` | Send a raw TuyaMCU command with auto checksum |
+    | `tuyaMcu_sendColor [dpID] [r] [g] [b] [format]` | Send a color command |
+    | `tuyaMcu_sendCurTime` | Send current NTP time to a clock MCU |
+    | `tuyaMcu_sendQueryState` | Query current MCU state |
+    | `tuyaMcu_setBatteryAckDelay [ms]` | Delay before ACK on battery-powered devices |
+    | `tuyaMcu_batteryPoweredMode [1\|0]` | Enable battery-powered MCU mode |
+    | `tuyaMcu_setDimmerRange [Min] [Max]` | Set the dimmer value range |
+    | `tuyaMcu_setupLED [dpIDColor] [format] [dpIDPower]` | Configure TuyaMCU LED |
+    | `tuyaMcu_enableAutoSend [0\|1]` | Enable/disable auto send on init |
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The full command list is auto-generated from the firmware source. For commands not listed here, search the [elektroda.com forum](https://www.elektroda.com/rtvforum/) or see the raw `commands.md` in the repository.
+</Note>

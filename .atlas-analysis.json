@@ -1,0 +1,119 @@
+{
+  "projectType": "general",
+  "projectName": "OpenBeken",
+  "projectDescription": "Open-source Tasmota/ESPHome replacement firmware for Tuya-based IoT modules supporting 30+ chipsets with MQTT, Home Assistant, scripting, and an extensible driver system.",
+  "theme": "aspen",
+  "primaryColor": "#1D4ED8",
+  "lightColor": "#3B82F6",
+  "darkColor": "#1E3A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "flashing",
+              "initial-setup",
+              "supported-platforms"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/gpio-pins",
+              "configuration/channel-types",
+              "configuration/drivers-overview",
+              "configuration/safe-mode"
+            ]
+          },
+          {
+            "group": "Connectivity",
+            "pages": [
+              "connectivity/mqtt-setup",
+              "connectivity/home-assistant",
+              "connectivity/tcp-server"
+            ]
+          },
+          {
+            "group": "Scripting & Automation",
+            "pages": [
+              "scripting/overview",
+              "scripting/events",
+              "scripting/autoexec-examples"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/led-lighting",
+              "advanced/power-metering",
+              "advanced/building"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Command Reference",
+            "pages": [
+              "reference/commands",
+              "reference/flags",
+              "reference/constants"
+            ]
+          },
+          {
+            "group": "Drivers",
+            "pages": [
+              "reference/driver-reference",
+              "reference/io-roles"
+            ]
+          },
+          {
+            "group": "MQTT & API",
+            "pages": [
+              "reference/mqtt-topics"
+            ]
+          },
+          {
+            "group": "Help",
+            "pages": [
+              "reference/faq"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Supports 30+ chipsets including BK7231T/N, BL602, ESP32/ESP8266, RTL8710/8720, W600/W800, LN882H, and more",
+    "MQTT integration with Home Assistant (YAML generator and auto-discovery)",
+    "Tasmota-compatible command syntax and JSON over HTTP",
+    "Extensible driver system for TuyaMCU, I2C, SPI, power metering, LED, sensors, and custom peripherals",
+    "Advanced scripting with events, repeating timers, clock events, and change handlers",
+    "RGBCW LED control with SM2135, BP5758D, WS2812B, and PWM support",
+    "LittleFS integration for custom HTML pages, scripts, and REST API hosting",
+    "OTA firmware upgrades via web interface",
+    "Deep sleep and battery-saving modes",
+    "Windows simulator/schematic drawer for development and testing"
+  ],
+  "publicApiSurface": [
+    "startDriver <DriverName> — Load a driver at runtime",
+    "SetChannel <index> <value> — Set a channel/relay state",
+    "backlog <cmd1>;<cmd2> — Run multiple commands in sequence",
+    "addRepeatingEvent <interval> <repeats> <command> — Schedule recurring commands",
+    "AddEventHandler <event> <arg> <command> — Respond to button/GPIO events",
+    "AddChangeHandler <variable> <relation> <value> <command> — React to value changes",
+    "publish <topic> <value> — Publish an MQTT message",
+    "OBK_DEV_NAME/<index>/set — MQTT topic to set a channel value",
+    "OBK_DEV_NAME/<index>/get — MQTT topic to read a channel value",
+    "cmnd/OBK_DEV_NAME/<command> — Execute any command via MQTT",
+    "led_basecolor_rgb <RRGGBB> — Set LED RGB color",
+    "led_dimmer <0-100> — Set LED brightness",
+    "HTTP GET /cm?cmnd=<command> — HTTP command API (Tasmota compatible)"
+  ]
+}

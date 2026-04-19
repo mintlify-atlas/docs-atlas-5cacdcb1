@@ -1,0 +1,194 @@
+---
+title: "OpenBeken driver system overview"
+description: "Drivers add hardware support and network features to OpenBeken. Start them with startDriver in autoexec.bat, or have them autostart by setting the correct GPIO pin roles."
+---
+
+OpenBeken separates its firmware into a small core and a collection of **drivers** — pluggable modules that each handle a specific piece of hardware or a network protocol. Drivers for common peripherals such as temperature sensors and LED chips start automatically when you save the matching GPIO pin roles. Drivers for communication protocols and network services — NTP, TuyaMCU, BL0942, IR, DDP, SSDP — need to be started explicitly with the `startDriver` command.
+
+The most important place to put `startDriver` calls is in `autoexec.bat`, the script file stored on the LittleFS filesystem that runs at every boot. Without an entry in `autoexec.bat`, a driver started from the web console will not survive a power cycle.
+
+## Starting a driver
+
+```bash
+startDriver <DriverName>
+```
+
+Some drivers accept optional arguments:
+
+```bash
+# BL0942 at the default baud rate (4800)
+startDriver BL0942
+
+# BL0942 at 9600 baud
+startDriver BL0942 9600
+
+# DS3231 RTC with clock sync from RTC on start (sync mode 1)
+startDriver DS3231 <CLK-Pin> <DATA-Pin> 1
+
+# NTP time synchronisation
+startDriver NTP
+
+# NEO6M GPS at 38400 baud
+startDriver NEO6M 38400
+```
+
+Place these lines in `/autoexec.bat` via **Config → LittleFS** or the web console file editor:
+
+```bash
+# autoexec.bat — runs at every boot
+startDriver NTP
+startDriver TuyaMCU
+```
+
+<Tip>
+You can also enter a single startup command in the **Short startup command** field on the **Config → General** page. This is stored in the main configuration flash sector rather than LittleFS, so it survives an `lfs_format` operation. It is useful as a last-resort recovery command.
+</Tip>
+
+## Communication protocol drivers
+
+<CardGroup cols={2}>
+  <Card title="TuyaMCU" icon="microchip" href="/reference/driver-reference">
+    The most widely used driver for Tuya devices with a secondary MCU. Handles bidirectional UART communication on RX1/TX1 between the BK Wi-Fi module and the device MCU. Required for TuyaMCU dimmers, fans, displays, and sensor devices. Also see `tmSensor` for low-power TuyaMCU door and humidity sensors that sleep between readings.
+  </Card>
+  <Card title="IR / IR2" icon="radio" href="/reference/driver-reference">
+    IRLibrary wrapper for sending and receiving infrared remote signals. Assign `IRRecv` and `IRSend` GPIO roles, then start the driver. `IR2` is a simpler variant that plays back captures made with a Flipper Zero. Use flags 14 and 22 to control MQTT publishing of received IR data.
+  </Card>
+  <Card title="DDP" icon="broadcast-tower" href="/reference/driver-reference">
+    Distributed Display Protocol — a UDP-based LED control protocol compatible with xLights and similar software. Start `DDP` to make the device accept incoming LED frame data over the network and drive connected LEDs accordingly.
+  </Card>
+  <Card title="SSDP / Wemo / Hue" icon="network-wired" href="/reference/driver-reference">
+    `SSDP` enables UPnP discovery so BK devices appear in the Windows network section. `Wemo` and `Hue` build on top of SSDP to emulate Belkin Wemo and Philips Hue devices for Alexa voice control. Start SSDP first — both Wemo and Hue depend on it.
+  </Card>
+</CardGroup>
+
+## Power metering drivers
+
+<CardGroup cols={2}>
+  <Card title="BL0942" icon="bolt" href="/advanced/power-metering">
+    UART-based single-phase power meter found in many smart plugs. Communicates over TX1/RX1 at 4800 baud by default (`startDriver BL0942 9600` for 9600 baud). Requires calibration after first setup, identical to the Tasmota calibration procedure.
+  </Card>
+  <Card title="BL0942SPI" icon="bolt" href="/advanced/power-metering">
+    SPI variant of BL0942 for modules that route the meter chip to SPI1 instead of UART. See the PZIOT-E01 teardown for a hardware example.
+  </Card>
+  <Card title="BL0937" icon="bolt" href="/advanced/power-metering">
+    Pulse-based power meter requiring three GPIO pins: CF, CF1, and SEL. Setting all three GPIO pin roles causes the driver to autostart — no `startDriver` needed. Calibration is required after setup.
+  </Card>
+  <Card title="CSE7766" icon="bolt" href="/advanced/power-metering">
+    UART power meter chip found in some Sonoff devices. Communicates over TX1/RX1. Start with `startDriver CSE7766`.
+  </Card>
+</CardGroup>
+
+## Time and network utility drivers
+
+| Driver | Purpose | Typical usage |
+|--------|---------|---------------|
+| `NTP` | Synchronises the device clock from the internet. Required for any time-based automation. | `startDriver NTP` in `autoexec.bat` |
+| `DS3231` | Reads time from a DS3231 hardware RTC module over software I²C. Can optionally sync the system clock from the RTC on every start. | `startDriver DS3231 <CLK> <DATA> [syncMode]` |
+| `mqttServer` | Turns the device into a lightweight on-device MQTT broker. | `startDriver mqttServer` |
+| `UartTCP` | Bridges UART to a TCP socket. Used to connect Wi-Fi Zigbee coordinators without a Raspberry Pi. | `startDriver UartTCP` |
+| `NEO6M` | GPS chip driver. Reads NMEA sentences from a NEO6M module over UART and publishes location data. Default baud is 9600. | `startDriver NEO6M` or `startDriver NEO6M 38400` |
+
+## Sensor drivers
+
+Most sensor drivers autostart when you set the correct GPIO pin roles (DHT22, SHT3X, BMP280, etc.). The table below shows the ones that benefit from an explicit `startDriver` call or have special configuration:
+
+<AccordionGroup>
+  <Accordion title="Temperature and humidity sensors">
+    | Driver | Notes |
+    |--------|-------|
+    | `SHT3X` | Autostart when SHT3X_DAT and SHT3X_CLK roles are set. |
+    | `CHT83XX` | CHT8305/8310/8315 temperature and humidity sensor. Autostart on pin roles. |
+    | `AHT2X` | AHT10, AHT20, AHT30 humidity and temperature sensors over I²C. |
+    | `DS1820` | Simple OneWire DS18(B)20 temperature sensor driver. |
+    | `DS1820_FULL` | Full-featured DS18(B)20 driver with support for multiple sensors on one bus. |
+    | `MAX6675` | Thermocouple interface for high-temperature measurements. |
+  </Accordion>
+
+  <Accordion title="Pressure and air quality sensors">
+    | Driver | Notes |
+    |--------|-------|
+    | `BMP280` | BMP280 temperature and pressure sensor over I²C. |
+    | `BMPI2C` | Unified driver for BMP085, BMP180, BMP280, BME280, BME68X. |
+    | `SGP` | SGP air quality sensor (VOC/eCO₂). Autostart when SGP_CLK and SGP_DAT roles are set. |
+    | `MCP9808` | I²C temperature sensor with external wakeup pin. |
+    | `LTR_ALS` | LTR-303/329 ambient light sensor. |
+  </Accordion>
+
+  <Accordion title="Battery monitoring">
+    The `Battery` driver measures battery level using an ADC pin and optionally controls a relay to disconnect the load when the battery is low. Assign `BAT_ADC` and `BAT_Relay` (or `BAT_Relay_n`) pin roles to autostart it.
+  </Accordion>
+</AccordionGroup>
+
+## LED and display drivers
+
+<AccordionGroup>
+  <Accordion title="Addressable LED strips">
+    | Driver | Notes |
+    |--------|-------|
+    | `SM16703P` | Individually addressable RGB LEDs over hardware SPI (data on P16/MOSI). Similar to WS2812B. Start with `startDriver SM16703P` after setting the `SM16703P_DIN` pin role. |
+    | `SM15155E` | WS2812B-like single-wire LED controller, also uses P16. Start with `startDriver SM15155E`. |
+    | `PixelAnim` | Built-in animation library for WS2812B-type LED strips. |
+    | `DDP` | Accept LED frames over the network from xLights or other show-control software. |
+    | `DDPSend` | Send DDP frames to another DDP device. |
+  </Accordion>
+
+  <Accordion title="Segment and matrix displays">
+    | Driver | Notes |
+    |--------|-------|
+    | `TM1637` | 7-segment display with DIO/CLK. Autostart when TM1637_DIO and TM1637_CLK roles are set. |
+    | `GN6932` | 7-segment display with DIO/CLK/STB. Autostart on pin roles. |
+    | `TM1638` | 8-digit 7-segment display with DIO/CLK/STB. Autostart on pin roles. |
+    | `HD2015` | I²C-like 7-segment display, compatible with TM1650. |
+    | `MAX72XX` | MAX7219/MAX7221 LED matrix display. Start with `startDriver MAX72XX`. |
+    | `HT16K33` | 16-segment I²C display driver. |
+    | `SSD1306` | SSD1306 OLED 128×32 I²C display. |
+    | `PT6523` | Car radio LCD driver. |
+  </Accordion>
+
+  <Accordion title="Built-in LED chip drivers (autostart)">
+    These drivers start automatically when both required GPIO pin roles are set. You do not normally need to call `startDriver` for them:
+
+    - `SM2135` — SM2135 modified-I²C LED driver for RGBCW bulbs
+    - `BP5758D` — BP5758D driver (used in some Sonoff bulbs)
+    - `BP1658CJ` — BP1658CJ RGBCW LED driver
+    - `SM2235` — SM2235/SM2335/SM2185N driver
+    - `KP18058` — KP18058/KP18068 driver
+
+    Use the corresponding `_Map` command after the driver starts if colours appear in the wrong order.
+  </Accordion>
+</AccordionGroup>
+
+## Web and UI drivers
+
+| Driver | Purpose |
+|--------|---------|
+| `HTTPButtons` | Creates custom scriptable buttons on the main web page. Define the buttons and their commands in `autoexec.bat`. |
+| `Widget` | Loads custom HTML snippets from the LittleFS filesystem and embeds them on the main page. Snippets can use the OBK REST API. |
+| `Charts` | Generates charts directly on the device web page from channel data. |
+| `OpenWeatherMap` | Fetches weather data for a configured latitude/longitude and populates temperature, humidity, and pressure channels. |
+| `DGR` | Tasmota Device Groups driver. Enables group state synchronisation with other Tasmota or OpenBeken devices on the same LAN. |
+
+## Disabling all driver autostart
+
+Flag 36 (**Deactivate Autostart of all drivers**) prevents any driver from starting automatically, including those that would normally autostart from GPIO pin roles. This can help isolate a problem where a driver is causing boot loops. Set it in **Config → General → Flags** and reboot.
+
+<Warning>
+Disabling autostart also suppresses drivers that are essential for device function, such as BL0937 power metering started via pin roles. Only use flag 36 for debugging, and clear it once the issue is resolved.
+</Warning>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Full driver reference" icon="book" href="/reference/driver-reference">
+    Complete list of every driver, its description, and its compile-time enable flag.
+  </Card>
+  <Card title="GPIO pin roles" icon="cpu" href="/configuration/gpio-pins">
+    GPIO roles that trigger driver autostart without a startDriver call.
+  </Card>
+  <Card title="Scripting overview" icon="code" href="/scripting/overview">
+    Use scripts in autoexec.bat alongside startDriver commands.
+  </Card>
+  <Card title="Power metering" icon="bolt" href="/advanced/power-metering">
+    Calibrating BL0942, BL0937, and CSE7766 after the driver starts.
+  </Card>
+</CardGroup>

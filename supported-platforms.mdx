@@ -1,0 +1,113 @@
+---
+title: "OpenBeken supported chips and feature matrix"
+description: "Full feature matrix for all 30+ chipsets supported by OpenBeken, covering GPIO, OTA, PWM, ADC, deep sleep, SPI LED, IR, and Bluetooth across eight silicon vendors."
+---
+
+OpenBeken supports more than 30 chipsets from eight silicon vendors. What began as firmware for Beken's BK7231T has grown into a multi-vendor platform spanning Beken, Bouffalo Lab, WinnerMicro, XRadio/Allwinner, Lightning Semi, Espressif, Realtek, ESWIN, RDA, and Taixin. Each platform shares the same web interface, command system, scripting engine, and MQTT integration — only the low-level peripheral drivers differ. The table below shows which hardware features are available on each chip so you can assess compatibility before purchasing or flashing a device.
+
+## Feature matrix
+
+| Platform | Family | GPIO | WPA3 | OTA | GPIO IRQ | UART | PWM | ADC | Deep sleep | WDT | SPI LED | IR | BT |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| BK7231T | Beken | ✅ | ✅¹² | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅¹² | ✅ | ❌ |
+| BK7231N | Beken | ✅ | ✅¹² | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| BK7231S / BK7231U | Beken | ✅ | ✅ | ✅¹ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| BK7238 | Beken | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| BK7252 | Beken | ✅ | ✅ | ⚠️¹'¹⁴ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| BK7252N | Beken | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❓ |
+| XR809 | XRadio | ✅ | ❌ | ❗️⁵ | ✅ | ✅ | ✅⁸ | ✅ | ✅ | ✅ | ❓ | ❓⁹ | ➖ |
+| XR806 | XRadio | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁸ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| XR872 / XF16 | XRadio | ✅ | ✅ | ✅² | ✅ | ✅ | ✅⁸ | ✅ | ✅ | ✅ | ❓ | ❓⁹ | ➖ |
+| BL602 / LF686 | Bouffalo Lab | ✅ | ✅ | ✅⁴ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| BL616 | Bouffalo Lab | ✅ | ✅ | ✅⁴ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| W800 / W801 | WinnerMicro | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| W600 / W601 | WinnerMicro | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅⁶ | ❓⁹ | ➖ |
+| LN882H | Lightning Semi | ✅ | ✅ | ✅⁴ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| LN8825B | Lightning Semi | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ➖ |
+| ESP8266 / ESP8285 | Espressif | ✅ | ⚠️¹³ | ✅²'⁴ | ✅ | ✅ | ✅⁷ | ❌ | ❗️ | ✅ | ➖ | ❓⁹ | ➖ |
+| ESP32 / -C2 / -C3 / -C5 / -C6 / -C61 / -S2 / -S3 | Espressif | ✅ | ⚠️¹³ | ✅⁴ | ✅ | ✅ | ✅ | ❓ | ✅¹⁰ | ✅ | ✅ | ❓⁹ | ❌ |
+| TR6260 | Transa Semi | ✅ | ❌ | ✅⁴ | ✅ | ❌ | ✅⁸ | ❌ | ❌ | ✅ | ➖ | ⚠️⁹ | ➖ |
+| RTL8711AM (Ameba1) | Realtek | ✅ | ❗️ | ✅⁴ | ✅ | ✅ | ✅⁸ | ❌ | ❌ | ✅ | ✅ | ❓⁶ | ➖ |
+| RTL8710B (AmebaZ) | Realtek | ✅ | ✅ | ✅⁴ | ✅ | ✅ | ✅⁸ | ❌ | ❌ | ✅ | ✅ | ✅⁶ | ➖ |
+| RTL8710C / RTL8720C (AmebaZ2) | Realtek | ✅ | ✅ | ✅⁴ | ✅ | ✅ | ✅⁸ | ➖ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| RTL8720D (AmebaD) / RTL872xCSM / RTL8720CS (AmebaCS) | Realtek | ✅ | ✅ | ✅⁴ | ✅ | ✅ | ✅⁸ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| RTL8721DA / RTL8711DAF (AmebaDplus) | Realtek | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| RTL8720E / RTL8710ECF (AmebaLite) | Realtek | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❓ |
+| ECR6600 | ESWIN | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁸ | ❗️ | ❗️¹¹ | ✅ | ➖ | ❓ | ❌ |
+| TXW81X | Taixin | ✅ | ❌ | ❗️ | ❓ | ❌ | ❌ | ❌ | ❌ | ❓ | ❌ | ❌ | ➖ |
+| RDA5981 | RDA | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ➖ | ❌ | ➖ |
+
+## Legend
+
+| Symbol | Meaning |
+|:---:|---|
+| ✅ | Works |
+| ❓ | Not tested |
+| ❌ | Not implemented |
+| ❗️ | Broken |
+| ⚠️ | Partial or conditional support — see footnote |
+| ➖ | Not applicable to this platform |
+
+## Footnotes
+
+| # | Note |
+|---|---|
+| ¹ | OTA success depends on the partition layout set in the bootloader. Flash QIO firmware for guaranteed OTA success. |
+| ² | Excludes 1 MB flash variants — OTA requires 2 MB or more. |
+| ³ | Implemented, but no tool available to generate the OTA file. |
+| ⁴ | No HTTP OTA — OTA is only available through the web application drag-and-drop method. |
+| ⁵ | OTA attempt leads to device crash. Do not attempt OTA on XR809. |
+| ⁶ | Disabled in `obk_config`. |
+| ⁷ | Software PWM only — expect visible flickering on LED loads. |
+| ⁸ | Be careful with pin assignments; some PWM channels overlap with other functions on this platform. |
+| ⁹ | IR receive only — IR transmit is not supported. |
+| ¹⁰ | Timer-based deep sleep only — GPIO wakeup is not supported on ESP32. |
+| ¹¹ | After waking from deep sleep, the ECR6600 will refuse to reconnect to WiFi until it is power-cycled. |
+| ¹² | WPA3 and SPI LED are only available in `_ALT` builds for BK7231T and BK7231N. |
+| ¹³ | WPA3 must be manually enabled by setting `CONFIG_ESP8266_WIFI_ENABLE_WPA3_SAE` (ESP8266) or `CONFIG_ESP_WIFI_ENABLE_WPA3_SAE` (ESP32) to `y` in `sdkconfig.defaults`. |
+| ¹⁴ | OTA on Tuya BK7252 is not supported — the stock bootloader does nothing, and a custom bootloader will not encrypt the main partition on unpack, bricking the device. |
+
+## Vendor families
+
+<CardGroup cols={2}>
+  <Card title="Beken" icon="microchip">
+    BK7231T, BK7231N, BK7231M, BK7231S, BK7231U, BK7238, BK7252, BK7252N. The original and most widely supported family. Tuya modules WB3S, WB2S, CB2S, CB2L, and many others use these chips.
+  </Card>
+  <Card title="Bouffalo Lab" icon="microchip">
+    BL602, LF686, TG7100C, BL616, BL618. BL602 is common in Magic Home LED controllers. LF686 and TG7100C flash identically to standard BL602.
+  </Card>
+  <Card title="Espressif" icon="microchip">
+    ESP8266, ESP8285, ESP32 (original), ESP32-S2, ESP32-S3, ESP32-C2, ESP32-C3, ESP32-C5, ESP32-C6, ESP32-C61. The ESP family is widely available and well-supported.
+  </Card>
+  <Card title="WinnerMicro" icon="microchip">
+    W600, W601, W800, W801, W803, T6605. Found in various Tuya modules including WIS600, ESP-01W, TW-02, and TW-03.
+  </Card>
+  <Card title="Realtek" icon="microchip">
+    RTL8711AM (Ameba1), RTL8710B (AmebaZ), RTL8710C/RTL8720C (AmebaZ2), RTL8720D/RTL8720CS (AmebaD/AmebaCS), RTL8721DA/RTL8711DAF (AmebaDplus), RTL8720E/RTL8710ECF (AmebaLite). Note: Ameba1 requires JTAG or SPI flashing — UART is not available.
+  </Card>
+  <Card title="XRadio / Allwinner" icon="microchip">
+    XR809, XR806, XR872/XF16. Found in Tuya modules XR3 and WXU. XR809 does not support OTA.
+  </Card>
+  <Card title="Lightning Semi" icon="microchip">
+    LN882H and LN8825B. Full Bluetooth support on LN882H with WiFi, GPIO, PWM, ADC, and OTA.
+  </Card>
+  <Card title="ESWIN / Others" icon="microchip">
+    ECR6600 (ESWIN, WiFi 6), TXW81X (Taixin, limited support), RDA5981 (RDA). ECR6600 is found in modules such as AXYU, AXY2S, WG236, and HF-LPT6200.
+  </Card>
+</CardGroup>
+
+## In-progress platforms
+
+Support for the following chips is actively under development and not yet in stable releases:
+
+- **XR872 / XF16** — found in A9 camera modules
+- **BK7252U** — found in Tuya doorbell and camera hardware
+- **BK7252N** — found in A9 camera PCBs
+
+## Choosing a chip for new projects
+
+If you are selecting hardware for a new project, BK7231N (via Tuya modules CB2S or CB2L) offers the broadest feature coverage including Bluetooth, WPA3 (in `_ALT` builds), full OTA, and SPI LED support. For ESP-ecosystem compatibility or if you need strong toolchain support, any ESP32 variant is a solid choice. Avoid XR809 if OTA updates are important to your workflow.
+
+<Note>
+  Pre-built firmware binaries for every supported platform are published on the [GitHub Releases](https://github.com/openshwprojects/OpenBK7231T_App/releases) page. If you need to build for a platform not yet in the release pipeline, see the [building guide](/advanced/building).
+</Note>

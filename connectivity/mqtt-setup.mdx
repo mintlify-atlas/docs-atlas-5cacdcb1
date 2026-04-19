@@ -1,0 +1,204 @@
+---
+title: "Connect OpenBeken to an MQTT broker"
+description: "Configure OpenBeken's MQTT client, publish channel state, and send or receive commands using OpenBeken's native and Tasmota-compatible topic structure."
+---
+
+MQTT is the primary way to control and monitor OpenBeken devices remotely. Once your device is connected to a broker, every relay toggle, LED color change, or sensor reading can flow to Home Assistant, Node-RED, ioBroker, or any MQTT-capable platform. OpenBeken supports both its own topic structure and a Tasmota-compatible `cmnd`/`tele`/`stat` layout, so existing Tasmota-based automations work with little or no modification.
+
+## Configure the MQTT connection
+
+Open the device web interface and go to **Config → MQTT**. Fill in the broker details and save. The device reconnects immediately; no reboot is needed.
+
+| Field | Example | Notes |
+|---|---|---|
+| **Host** | `192.168.1.10` | Broker IP address or hostname |
+| **Port** | `1883` | Default unencrypted MQTT port |
+| **Username** | `obk_user` | Leave empty if broker has no auth |
+| **Password** | `secret` | Leave empty if broker has no auth |
+| **Client name** | `obk_livingroom` | Used as `OBK_DEV_NAME` in all topics |
+
+<Note>
+  The client name you set becomes `OBK_DEV_NAME` throughout the topic structure below. Choose a short, unique name with no spaces — for example `obk_plug1` or `obk_dimmer_hall`.
+</Note>
+
+## Topic structure overview
+
+OpenBeken organises MQTT traffic into three patterns: channel control, channel reads, and command execution.
+
+### Controlling channels
+
+Send a value to a channel index to control a relay, set a PWM duty cycle, or write any mapped channel:
+
+```text
+OBK_DEV_NAME/INDEX/set  →  payload: <value>
+```
+
+**Examples:**
+
+```text
+obk_plug1/1/set   →  1        (turn relay on channel 1 ON)
+obk_plug1/1/set   →  0        (turn relay on channel 1 OFF)
+obk_dimmer/3/set  →  180      (set PWM on channel 3 to value 180)
+```
+
+If the channel is mapped to TuyaMCU, the MCU is also updated automatically.
+
+### Reading channel state
+
+OpenBeken publishes to `OBK_DEV_NAME/INDEX/get` whenever a channel value changes. You can also request the current value at any time by publishing an **empty payload** to the same topic:
+
+```text
+OBK_DEV_NAME/INDEX/get  ←  (published by device on change)
+OBK_DEV_NAME/INDEX/get  →  (send empty payload to request current value)
+```
+
+### Running commands via MQTT
+
+Any command supported by the OpenBeken console can be sent over MQTT using the `cmnd` prefix — the same syntax as Tasmota:
+
+```text
+cmnd/OBK_DEV_NAME/COMMAND_TEXT  →  COMMAND_ARGUMENTS
+```
+
+**Examples:**
+
+```text
+cmnd/obk_plug1/restart    →  1
+cmnd/obk_plug1/SetChannel →  1 1
+cmnd/obk_plug1/backlog    →  SetChannel 1 1; Delay 100; SetChannel 1 0
+```
+
+See the [command reference](/reference/commands) for the full list of available commands.
+
+## Periodic state broadcasts and flags
+
+By default, the device publishes system metrics (IP address, RSSI, uptime, free heap, MAC address) once on connect. You can enable additional broadcast behaviour through flags in **Config → Flags**.
+
+<Tabs>
+  <Tab title="Broadcast flags">
+
+| Flag | ID | What it enables |
+|---|---|---|
+| Broadcast self state every N seconds | **Flag 2** | Publishes system metrics periodically (default interval: 60 s, configurable with `mqtt_broadcastInterval`) |
+| Broadcast self state on MQTT connect | **Flag 10** | Re-publishes system metrics every time the device reconnects to the broker |
+| Broadcast LED params together | **Flag 0** | Publishes `led_dimmer` and `led_basecolor_rgb` whenever either changes |
+| Broadcast LED final color | **Flag 1** | Publishes `led_finalcolor_rgb` on change |
+| Broadcast LED final color RGBCW | **Flag 16** | Publishes `led_finalcolor_rgbcw` on change |
+
+  </Tab>
+  <Tab title="Set broadcast interval">
+
+Use the `mqtt_broadcastInterval` command to change how often periodic broadcasts fire. The value is in seconds:
+
+```text
+cmnd/obk_plug1/mqtt_broadcastInterval  →  30
+```
+
+To control how many items are published per second (useful on slow brokers), use `mqtt_broadcastItemsPerSec`.
+
+  </Tab>
+</Tabs>
+
+## System topics published on connect
+
+These topics are sent every time the device establishes a broker connection and, if Flag 2 is enabled, again periodically:
+
+| Topic | Sample value | Description |
+|---|---|---|
+| `OBK_DEV_NAME/connected` | `online` | Presence indicator |
+| `OBK_DEV_NAME/ip` | `192.168.0.123` | Current IP address |
+| `OBK_DEV_NAME/rssi` | `-70` | WiFi signal strength in dBm |
+| `OBK_DEV_NAME/uptime` | `653` | Seconds since last boot |
+| `OBK_DEV_NAME/freeheap` | `95168` | Free RAM in bytes |
+| `OBK_DEV_NAME/mac` | `84:e3:42:65:d1:87` | Hardware MAC address |
+| `OBK_DEV_NAME/sockets` | `5` | Open socket count |
+| `OBK_DEV_NAME/host` | `obk_t_fourRelays` | Hostname |
+| `OBK_DEV_NAME/build` | `Build on Nov 12 2022…` | Firmware build string |
+
+## Tasmota-compatible TELE/STAT/CMND topics
+
+Enable **Flag 30** to activate Tasmota-style `tele` and `stat` publishes. This is required for ioBroker and other platforms that expect the Tasmota topic layout.
+
+```text
+tele/OBK_DEV_NAME/STATE    →  { Tasmota STATE JSON }
+stat/OBK_DEV_NAME/RESULT   →  { Tasmota RESULT JSON }
+tele/OBK_DEV_NAME/SENSOR   →  { "ENERGY": { "Power": 0, "Voltage": 249.93, ... } }
+```
+
+The `SENSOR` message is published by power-metering devices (BL0937, BL0942, CSE7766, etc.). Make sure NTP is running on the device to get accurate timestamps in the `Time` field.
+
+<Note>
+  If you use infrared receive and want Tasmota-format IR publishes, enable **Flag 22**. IR results are published to `OBK_DEV_NAME/RESULT` with a JSON payload: `{ "IrReceived": { "Protocol": "Samsung", "Bits": 32, "Data": "0xEE110707" } }`.
+</Note>
+
+## MQTT wildcard subscription
+
+To subscribe to all topics from a single device at once, use the `#` wildcard:
+
+```text
+OBK_DEV_NAME/#
+```
+
+This is useful in Home Assistant MQTT sensors, Node-RED debug nodes, or any tool where you want a single subscription to capture every publish from the device.
+
+## Example: controlling a relay
+
+<CodeGroup>
+
+```text Publish (turn relay ON)
+Topic:   obk_plug1/1/set
+Payload: 1
+```
+
+```text Publish (turn relay OFF)
+Topic:   obk_plug1/1/set
+Payload: 0
+```
+
+```text Subscribe (read relay state)
+Topic:   obk_plug1/1/get
+```
+
+</CodeGroup>
+
+## Example: controlling an RGBCW LED
+
+<CodeGroup>
+
+```text Set LED color (hex RGB)
+Topic:   cmnd/obk_ledstrip/led_basecolor_rgb
+Payload: FF4400
+```
+
+```text Set dimmer level (0–100)
+Topic:   cmnd/obk_ledstrip/led_dimmer
+Payload: 75
+```
+
+```text Enable the LED
+Topic:   cmnd/obk_ledstrip/led_enableAll
+Payload: 1
+```
+
+</CodeGroup>
+
+## Other useful flags
+
+<CardGroup cols={2}>
+  <Card title="Retain all published values" icon="floppy-disk" href="/reference/flags">
+    **Flag 7** sets the MQTT retain flag on every publish, so subscribers immediately receive the last known state on connect.
+  </Card>
+  <Card title="Retain power channels only" icon="plug" href="/reference/flags">
+    **Flag 21** retains only relay/power channels, keeping broker storage lean while still recovering switch state after a reconnect.
+  </Card>
+  <Card title="Apply channel multiplier before publish" icon="calculator" href="/reference/flags">
+    **Flag 33** applies any channel-type multiplier to the value before publishing, useful for calibrated sensor readings.
+  </Card>
+  <Card title="Always publish TuyaMCU channels" icon="microchip" href="/reference/flags">
+    **Flag 19** forces publication of all channels mapped to TuyaMCU, even those that do not change frequently.
+  </Card>
+</CardGroup>
+
+<Tip>
+  To publish a completely custom topic from a script, use the `publish` command: `publish YOUR_TOPIC YOUR_VALUE`. The device will send the payload to `OBK_DEV_NAME/YOUR_TOPIC/get`.
+</Tip>

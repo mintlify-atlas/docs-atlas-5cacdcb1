@@ -1,0 +1,392 @@
+---
+title: "Real-world autoexec.bat examples for OpenBeken"
+description: "Complete, working autoexec.bat scripts for OpenBeken devices: MQTT relays, LED dimmers, BL0942 power meters, TuyaMCU fans, door sensors, and ping watchdogs."
+---
+
+`autoexec.bat` is a plain-text file stored in the device's LittleFS filesystem. The firmware reads and executes it line by line every time the device boots. Because it lives in LittleFS rather than flash, it survives firmware updates and can be as long as needed — there is no character limit. Upload it through **Web Application → LittleFS** in the web interface, then reboot to apply changes.
+
+<Note>
+  If you only need a few setup commands and do not want to use LittleFS, the **Short Startup Command** (under **Config → Short Startup Command**) is stored directly in flash and runs at boot. It is limited to 512 characters and does not support labels, loops, or `waitFor`.
+</Note>
+
+The examples below are complete, working scripts drawn from real device configurations. Copy one that matches your hardware and adjust channel numbers, pin numbers, and MQTT topic names as needed.
+
+---
+
+## Example 1: Two-relay device with MQTT state broadcast
+
+A basic dual-relay smart plug or wall switch. Both relay states are published to MQTT after every change, and the device signals its online status when MQTT connects.
+
+```bash two-relay-mqtt.bat
+// Two-relay device with MQTT broadcast
+// Channel 1 = relay 1, Channel 2 = relay 2
+
+setChannelType 1 toggle
+setChannelType 2 toggle
+
+// Start MQTT and wait for connection
+waitFor MQTTState 1
+delay_s 1
+
+// Announce boot
+publish status/boot ready
+
+// Publish relay states to MQTT on every change
+addEventHandler OnChannelChange 1 publish relay/1 $CH1
+addEventHandler OnChannelChange 2 publish relay/2 $CH2
+
+// Broadcast both channels every 60 seconds for reliability
+addRepeatingEvent 60 -1 backlog publish relay/1 $CH1; publish relay/2 $CH2
+```
+
+<Tip>
+  Add `setStartValue 1 -1` and `setStartValue 2 -1` to make the device remember relay states across reboots. The `-1` value tells the firmware to read the last-saved value from flash.
+</Tip>
+
+---
+
+## Example 2: LED dimmer with NTP time-based brightness
+
+An EDM-01AA-EU or similar TuyaMCU-based dimmer that adjusts brightness automatically based on the hour. Warm light in the evening, bright during the day.
+
+```bash led-dimmer-ntp.bat
+// TuyaMCU LED dimmer with NTP time-based brightness
+// Based on: https://www.elektroda.com/rtvforum/topic3929151.html
+
+// Start TuyaMCU driver
+startDriver TuyaMCU
+// Channel 1 = on/off toggle, Channel 2 = dimmer level
+setChannelType 1 toggle
+setChannelType 2 dimmer
+// Set baud rate for this dimmer module
+tuyaMcu_setBaudRate 115200
+// Report as paired so the MCU sends all data
+tuyaMcu_defWiFiState 4
+// Dimmer range for this hardware
+tuyaMcu_setDimmerRange 1 1000
+// Map TuyaMCU dpIds to channels
+linkTuyaMCUOutputToChannel 1 bool 1
+linkTuyaMCUOutputToChannel 2 val  2
+
+// Start NTP and set your time zone (offset in hours from UTC)
+startDriver NTP
+ntp_timeZoneOfs 2
+
+// Create light mode aliases
+alias day_lights   backlog led_temperature 200; led_dimmer 100; echo lights_day
+alias night_lights backlog led_temperature 500; led_dimmer 50;  echo lights_night
+
+// Schedule automatic changes
+addClockEvent 06:01 0xff 1 day_lights
+addClockEvent 20:01 0xff 2 night_lights
+
+// Wait for NTP sync, then set the correct initial state
+waitFor NTPState 1
+if $hour>=06&&$hour<20 then day_lights
+if $hour>=20||$hour<06 then night_lights
+```
+
+---
+
+## Example 3: Power metering socket with BL0942
+
+A smart socket with a BL0942 energy meter chip. Reads voltage, current, power, and total energy; publishes readings to MQTT every 30 seconds; and cuts power if consumption exceeds a safe limit.
+
+```bash power-meter-bl0942.bat
+// Smart socket with BL0942 energy meter
+// Channel 1 = relay, Channels 2-5 = meter readings
+
+setChannelType 1 toggle
+setChannelType 2 Voltage_div10
+setChannelType 3 Power
+setChannelType 4 Current_div1000
+setChannelType 5 EnergyTotal_kWh_div100
+
+// BL0942 is auto-detected when the GPIO roles are set in the pin config.
+// No startDriver call is needed for BL0942 — it starts automatically.
+
+// Wait for MQTT
+waitFor MQTTState 1
+delay_s 1
+
+// Publish all meter readings every 30 seconds
+addRepeatingEvent 30 -1 backlog publish meter/voltage $CH2; publish meter/power $CH3; publish meter/current $CH4; publish meter/energy $CH5
+
+// Safety cutoff: turn off relay if power exceeds 2400 W
+AddChangeHandler power > 2400 setChannel 1 0
+
+// Safety cutoff: turn off if current exceeds 10 A (value is *1000)
+AddChangeHandler Current > 10000 setChannel 1 0
+
+// Publish relay state on change
+addEventHandler OnChannelChange 1 publish socket/relay $CH1
+```
+
+<Warning>
+  The `Current` and `Frequency` values in `AddChangeHandler` are scaled integers. Current is multiplied by 1000, so `Current > 10000` means greater than 10 amps. Frequency is multiplied by 100, so `Frequency > 5295` means greater than 52.95 Hz.
+</Warning>
+
+---
+
+## Example 4: TuyaMCU five-speed fan controller
+
+A ceiling fan with a TuyaMCU bridge chip. Channel 1 controls power, channel 3 controls speed (off/low/mid/high/highest), with optional child lock and countdown timer.
+
+```bash tuya-fan-controller.bat
+// QIACHIP or similar TuyaMCU 5-speed fan controller
+// Based on: https://www.elektroda.com/rtvforum/topic3908093.html
+
+// Start MCU driver
+startDriver TuyaMCU
+
+// Channel types
+setChannelType 1  toggle              // fan on/off
+setChannelType 3  OffLowestLowMidHighHighest  // fan speed (enum)
+setChannelType 14 toggle              // child lock
+setChannelType 22 TextField           // countdown timer setting
+setChannelType 23 TextField           // remaining timer
+
+// Map TuyaMCU dpIds to channels
+// linkTuyaMCUOutputToChannel [dpId] [varType] [channel]
+linkTuyaMCUOutputToChannel 1  1 1
+linkTuyaMCUOutputToChannel 3  2 3
+linkTuyaMCUOutputToChannel 14 1 14
+linkTuyaMCUOutputToChannel 22 2 22
+linkTuyaMCUOutputToChannel 23 2 23
+
+// Wait for MQTT to connect, then publish initial states
+waitFor MQTTState 1
+delay_s 1
+publish fan/power   $CH1
+publish fan/speed   $CH3
+publish fan/lock    $CH14
+
+// Keep MQTT updated on every change
+addEventHandler OnChannelChange 1  publish fan/power  $CH1
+addEventHandler OnChannelChange 3  publish fan/speed  $CH3
+addEventHandler OnChannelChange 14 publish fan/lock   $CH14
+```
+
+---
+
+## Example 5: Door/window sensor with deep sleep
+
+A battery-powered contact sensor. It wakes from deep sleep, waits for MQTT, publishes the door state, and then sleeps again. If the door is open (water detected, etc.) it stays awake.
+
+```bash door-sensor-deepsleep.bat
+// Battery door/water sensor with deep sleep
+// Wakes, reports state, sleeps for 1 day unless sensor is active
+// Based on: https://www.elektroda.com/rtvforum/viewtopic.php?p=21096228
+
+setChannelLabel 1 DoorState
+
+// Configure battery monitoring (adjust divider and reference for your hardware)
+Battery_Setup 2000 3000 2 2400 4096
+Battery_cycle 2
+
+// Allow entering safe mode by holding button on pin 10 for 5 seconds
+addEventHandler OnHold 10 SafeMode 5
+
+// Wait for MQTT before publishing
+waitFor MQTTState 1
+delay_s 1
+// Always publish state once after boot
+publish door/state $CH1
+
+// Main loop — runs while awake
+mainLoop:
+delay_s 1
+// If sensor is clear (CH1 == 0), go to sleep; otherwise stay awake
+if $CH1!=1 then "goto sleep" else "goto mainLoop"
+
+sleep:
+delay_s 5
+// Sleep for 24 hours (86400 seconds) and wake on GPIO edge
+PinDeepSleep 86400
+```
+
+<Note>
+  `PinDeepSleep` wakes the device when the configured wake GPIO changes state. `DeepSleep` uses a timer only. Use `DSEdge` to configure whether to wake on rising or falling edge.
+</Note>
+
+---
+
+## Example 6: Inching relay (auto-off timer with UI)
+
+A relay that turns itself off automatically after a configurable delay. Channel 2 shows a live countdown. Channel 3 lets the user set the delay duration from the web UI.
+
+```bash inching-relay-timer.bat
+// Inching relay with configurable delay and live countdown
+// Based on: https://www.elektroda.com/rtvforum/topic4032982.html
+
+// Channels:
+// Channel 1 - relay
+// Channel 2 - current countdown (read-only timer display)
+// Channel 3 - constant delay setting (editable)
+
+// Remember channel 3 value in flash between reboots
+setStartValue 3 -1
+// Default delay if not previously set: 15 seconds
+if $CH3==0 then setChannel 3 15
+
+// UI display
+setChannelType  3 TextField
+setChannelLabel 3 TurnOffTime
+setChannelType  2 TimerSeconds
+
+// Aliases
+alias turn_off_after_time backlog setChannel 2 $CH3
+alias on_turned_off       setChannel 2 0
+alias turn_off_relay      setChannel 1 0
+alias do_check            if $CH2==0 then turn_off_relay
+alias do_tick             backlog addChannel 2 -1; do_check
+
+// Trigger aliases on relay state change
+addChangeHandler Channel1 == 1 turn_off_after_time
+addChangeHandler Channel1 == 0 on_turned_off
+
+// Main countdown loop
+again:
+if $CH2!=0 then do_tick
+delay_s 1
+goto again
+```
+
+---
+
+## Example 7: Ping watchdog with NTP and SSDP
+
+A device that monitors whether another host on the network is reachable. If the target does not respond for 10 minutes, the device reboots itself (useful for resetting a router or modem).
+
+```bash ping-watchdog.bat
+// Ping watchdog — reboot if target unreachable for 10 minutes
+// Also runs NTP and SSDP for discoverability
+
+startDriver NTP
+startDriver SSDP
+
+// Target to ping and interval between pings
+PingHost 192.168.0.1
+PingInterval 10
+
+// WARNING: the watchdog starts counting after a short delay post-reboot,
+// so it will not trigger immediately if the target is already down.
+
+// Reboot when target has been unreachable for 600 seconds (10 minutes)
+addChangeHandler noPingTime > 600 reboot
+```
+
+---
+
+## Example 8: NTP clock events with sunrise/sunset
+
+A smart light that turns on at civil sunset each evening, dims at 21:00, and turns off at 23:00. The sunset time is recalculated daily.
+
+```bash sunset-light-schedule.bat
+// Automatic light schedule using NTP sunrise/sunset
+// Based on: https://www.elektroda.com/rtvforum/topic3967141.html
+
+PowerSave 1
+startDriver ntp
+// Set your UTC offset and location
+ntp_timeZoneOfs -8
+ntp_setLatlong 44.002130 -123.091473
+
+// Light mode aliases
+alias high_lights  backlog led_temperature 300; led_dimmer 30; led_enableAll 1
+alias low_lights   backlog led_temperature 500; led_dimmer 5;  led_enableAll 1
+alias off_lights   backlog led_enableAll 0
+
+// Recalculate sunset daily and schedule the turn-on event
+alias calc_sunset  backlog setChannel 10 $sunset+1800; removeClockEvent 4; addClockEvent $CH10 0xff 4 high_lights
+
+// Clock events (IDs 1-3 are fixed times, ID 4 is dynamic sunset)
+addClockEvent 3:30  0xff 1 calc_sunset
+addClockEvent 21:00 0xff 2 low_lights
+addClockEvent 23:00 0xff 3 off_lights
+
+// Wait for NTP then apply the correct initial state
+waitFor NTPState 1
+calc_sunset
+
+// Store current time in seconds for comparison
+setChannel 11 $hour*3600+$minute*60
+
+// sunset to 21:00: high lights; 21:00 to 23:00: low lights; otherwise: off
+if $CH11>=$CH10&&$hour<21 then high_lights
+if $hour>=21&&$hour<23    then low_lights
+if $hour>=23||$CH11<$CH10 then off_lights
+```
+
+---
+
+## Example 9: Multi-click power strip
+
+A four-outlet power strip with a single physical button. Each click count toggles a different outlet, while MQTT publishes each outlet state independently.
+
+```bash multi-click-power-strip.bat
+// 4-outlet + USB power strip with single button
+// Button is on pin 26 with role Btn_ScriptOnly
+
+setChannelType 1 toggle
+setChannelType 2 toggle
+setChannelType 3 toggle
+setChannelType 4 toggle
+setChannelType 5 toggle
+
+// Map click counts to outlets
+addEventHandler OnClick    26 ToggleChannel 1
+addEventHandler OnDblClick 26 ToggleChannel 2
+addEventHandler On3Click   26 ToggleChannel 3
+addEventHandler On4Click   26 ToggleChannel 4
+addEventHandler On5Click   26 ToggleChannel 5
+
+// Publish state changes to MQTT
+waitFor MQTTState 1
+addEventHandler OnChannelChange 1 publish outlet/1 $CH1
+addEventHandler OnChannelChange 2 publish outlet/2 $CH2
+addEventHandler OnChannelChange 3 publish outlet/3 $CH3
+addEventHandler OnChannelChange 4 publish outlet/4 $CH4
+addEventHandler OnChannelChange 5 publish outlet/5 $CH5
+```
+
+---
+
+## Uploading and testing
+
+<Steps>
+  <Step title="Write your autoexec.bat">
+    Create a plain-text file named exactly `autoexec.bat` using the examples above as a starting point.
+  </Step>
+  <Step title="Upload via LittleFS">
+    In the device web interface, open **Web Application → LittleFS** and upload the file. It will appear in the file listing once uploaded.
+  </Step>
+  <Step title="Reboot and check the console">
+    Send `reboot` from the web console or press the hardware reset button. Open the **Console** tab and watch the log — `autoexec.bat` output appears there as the script runs.
+  </Step>
+  <Step title="Test individual commands">
+    To test a command without rebooting, type it directly in the **Console** tab. Commands entered there use the same interpreter as the script file.
+  </Step>
+  <Step title="Edit and iterate">
+    Make changes to your local `autoexec.bat` file, re-upload it via LittleFS, and reboot again. LittleFS overwrites the existing file on upload.
+  </Step>
+</Steps>
+
+---
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Scripting overview" icon="code" href="/scripting/overview">
+    How commands, backlog, channel variables, and repeating events work together.
+  </Card>
+  <Card title="Event handlers and triggers" icon="bolt" href="/scripting/events">
+    Full reference for every event name: button, MQTT, NTP, power, IR, and TuyaMCU events.
+  </Card>
+  <Card title="Drivers overview" icon="cpu" href="/configuration/drivers-overview">
+    How to start drivers like TuyaMCU, NTP, SSDP, and httpButtons in your script.
+  </Card>
+  <Card title="Power metering" icon="zap" href="/advanced/power-metering">
+    BL0942, BL0937, and compatible chip setup for energy monitoring.
+  </Card>
+</CardGroup>

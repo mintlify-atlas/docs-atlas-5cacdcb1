@@ -1,0 +1,234 @@
+---
+title: "OpenBeken frequently asked questions"
+description: "Answers to common questions about OpenBeken channels, configuration, WiFi recovery, MQTT, LED setup, TuyaMCU, OTA updates, and device troubleshooting."
+---
+
+This page collects the most frequently asked questions about OpenBeken. Questions are sourced directly from the project's FAQ database. If your question is not answered here, search the [elektroda.com forum](https://www.elektroda.com/rtvforum/) or open an issue on GitHub.
+
+## Channels and configuration
+
+<AccordionGroup>
+  <Accordion title="What is a channel?">
+    A channel is like a variable, but on most simple devices you can think of channels as relay slots. If you have two relays and two buttons and you want to link a relay to a button, set the same channel index for both. That way you can have many buttons and relays on the same device.
+
+    Channels are also used to index PWM outputs for LEDs. The expected PWM order is RGBCW (Red, Green, Blue, Cool white, Warm white), so make sure the channel order is correct if you have mixed colors.
+
+    OpenBeken supports channel numbering starting from both `0` and `1`. Channels are assigned per-pin in the **Module Pins Configuration** panel. Some pin roles support two channel indices — for example, a Button role can have a first channel for single-click and a second for double-click.
+  </Accordion>
+
+  <Accordion title="What is a channel type?">
+    Channel types are required mainly on TuyaMCU devices. The channel type determines how a channel value is displayed in the GUI. Channels are variables and can contain anything, including data mapped from TuyaMCU. For example, to display temperature data you may need to set the Temperature channel type on the channel you linked to the temperature dpID of your device. The same applies to TuyaMCU fan speeds, dimmers, toggles, and so on.
+  </Accordion>
+
+  <Accordion title="How do I set relay state on device boot (PowerOnState)?">
+    There are two ways.
+
+    **First:** go to **Config → Startup state** and set the startup state from the GUI.
+
+    **Second:** use the short startup command (in **Options**) or create `autoexec.bat` in the LittleFS file system via the web panel.
+
+    For an RGBCW LED, to start with 100% brightness and red color:
+    ```bash
+    backlog led_dimmer 100; led_basecolor_rgb #FF0000; led_enableAll 1
+    ```
+
+    For a simple relay on channel 5:
+    ```bash
+    SetChannel 5 1
+    ```
+  </Accordion>
+
+  <Accordion title="How do I enter multiple startup commands?">
+    Use `backlog`, just like in Tasmota. Open **Config → Short startup command** and enter:
+    ```bash
+    backlog startDriver BL0942; startDriver NTP; ntp_setServer 217.147.223.78
+    ```
+
+    Alternatively, open the **Web Application → LittleFS** tab, create `autoexec.bat`, and enter each command on a new line. The file is executed automatically on every boot.
+  </Accordion>
+
+  <Accordion title="How do I set up a device with two relays and two buttons?">
+    Determine which GPIO pins are used for relays and buttons, then assign channel `1` to the first relay and first button, and channel `2` to the second relay and second button.
+  </Accordion>
+
+  <Accordion title="How do I set up a single button to control two relays?">
+    Set the pin role to `Button`. After saving, a second channel text box appears. The first channel toggles on single click; the second channel toggles on double-click.
+  </Accordion>
+
+  <Accordion title="How do I use a bistable (toggle) switch?">
+    Use the `ToggleChannelOnToggle` role. The target channel value will be inverted each time the switch changes state. See [this topic](https://www.elektroda.com/rtvforum/topic3895572.html) for a detailed description.
+  </Accordion>
+
+  <Accordion title="How do I copy a digital input value directly to a channel (relay follows switch)?">
+    Use the `DigitalInput` role. A digital input sets the linked channel to the current logical level on the pin. Choose the `NoPullUp` variant or the inverted version if needed.
+  </Accordion>
+</AccordionGroup>
+
+## WiFi and network recovery
+
+<AccordionGroup>
+  <Accordion title="I entered the wrong SSID and my device is not accessible. How do I recover?">
+    Do five short power-on/power-off cycles (not too short — allow capacitors to discharge each time). The device will enter AP mode (Safe Mode). In Safe Mode, pins are disabled and drivers do not run, so do not worry if buttons appear unresponsive. Connect to the device's access point and correct the credentials.
+  </Accordion>
+
+  <Accordion title="I flashed OpenBeken, configured WiFi in AP mode, but it does not connect. What's wrong?">
+    Several things can cause this:
+
+    1. **Power supply** — make sure the WiFi module is powered from a reliable 3.3V supply. This is a frequent cause of failure on BL602 when powered from a cheap USB-to-UART converter's 3.3V pin.
+    2. **Wrong credentials** — do 5 power cycles to return to Safe Mode and correct the SSID and password.
+    3. **Broken RF partition (BK modules)** — use the BK7231 flash tool or click **Flash → Restore RF partition** in the Web Application. This will also assign a new MAC address.
+  </Accordion>
+
+  <Accordion title="Why does my device bootloop, or why does the firmware not start?">
+    Make sure you are powering the module from a good power supply. A desoldered WiFi module powered directly from the 3.3V pin of a USB-to-UART converter will not provide sufficient current and often causes bootloops. This is especially common on BL602. The device may appear to work in AP mode but fail in STA mode. When powering the module outside its original board, always use a proper 3.3V regulated supply.
+  </Accordion>
+
+  <Accordion title="My device name ends with 00000. Is this normal?">
+    No. The device name is generated from the MAC address. If it ends in zeros, the MAC has been cleared. See the answer below.
+  </Accordion>
+
+  <Accordion title="I lost my MAC address and cannot change it. My MAC ends with 000000. How do I fix this?">
+    You most likely overwrote the TLV header of the RF partition during flashing, probably by using **Erase all** when it was not needed. The RF partition is normally not overwritten when flashing correctly, since the OBK binary ends well before that partition.
+
+    To restore it on BK7231: open the Web Application, go to the **Flash** tab, and press **Restore RF Config**. Note that removing the original RF partition (which has already happened if you have 000000) may slightly reduce WiFi range and performance.
+  </Accordion>
+
+  <Accordion title="How do I make a device discoverable by Windows?">
+    Run the SSDP driver at startup. Add `startDriver SSDP` to the short startup command or `autoexec.bat` so it runs on every boot.
+  </Accordion>
+
+  <Accordion title="How do I make a device discoverable by Alexa?">
+    Run both SSDP and Wemo at startup:
+    ```bash
+    backlog startDriver SSDP; startDriver Wemo
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Logging and debugging
+
+<AccordionGroup>
+  <Accordion title="How do I enable more logging?">
+    Two steps are required:
+
+    1. In the console, type `loglevel X` where `X` is 0–7. The default is `3` (INFO). Level `4` adds DEBUG; level `5` adds EXTRADEBUG.
+    2. On the web panel log viewer, switch the filter to **All**.
+
+    Both steps must be done for the extra logs to appear.
+  </Accordion>
+
+  <Accordion title="My BL0937 power metering socket shows visible measurement spikes. What's wrong?">
+    Enabled `PowerSave` may cause this. Remove the `PowerSave 1` command from your startup script and reboot.
+  </Accordion>
+
+  <Accordion title="How do I configure a ping watchdog to cycle a relay when an IP does not respond?">
+    See the following [example on elektroda.com](https://www.elektroda.com/rtvforum/viewtopic.php?p=20368812#20368812) for a complete walkthrough using `PingHost`, `PingInterval`, and `AddChangeHandler`.
+  </Accordion>
+</AccordionGroup>
+
+## LED setup
+
+<AccordionGroup>
+  <Accordion title="How do I set up an RGB LED with PWM outputs?">
+    Determine which GPIO pins control the colors, then set `PWM` roles on those pins. Keep channels in RGB order: Red = 1, Green = 2, Blue = 3 (the firmware also supports index-from-0 numbering).
+  </Accordion>
+
+  <Accordion title="How do I set up an RGB LED with an I2C driver like SM2135?">
+    Identify the two pins used for SDA and SCL lines of the LED driver. Set their roles (`SM2135_DAT` and `SM2135_CLK`), then reboot — the driver starts automatically. You may need to remap the channel order with `SM2135_Map 0 2 1 3 4` or similar. See also [this topic](https://www.elektroda.com/rtvforum/topic3906898.html).
+  </Accordion>
+
+  <Accordion title="My wall touch switch reacts slowly. How do I make it react instantly?">
+    Enable **flag 6** — `[BTN] Instant touch reaction instead of waiting for release (aka SetOption 13)` — in **Options → General Flags**.
+  </Accordion>
+</AccordionGroup>
+
+## MQTT and device control
+
+<AccordionGroup>
+  <Accordion title="My device does not publish channels. What's wrong?">
+    First confirm the MQTT status on the main page shows **connected**. Then check your flags:
+
+    - Flag 2 enables periodic broadcast every N seconds.
+    - Flag 10 publishes state on MQTT connect.
+    - Flag 19 publishes all TuyaMCU channels.
+
+    Not all channels are published by default. You can also enable publishing for a specific channel by setting its channel type in the web interface.
+  </Accordion>
+
+  <Accordion title="How do I control a device via MQTT?">
+    There are several methods:
+
+    **Tasmota-compatible:** publish `1` or `0` to `cmnd/OBK_DEVICE/POWER`. For a second relay use `cmnd/OBK_DEVICE/POWER1`. Payloads `ON`, `OFF`, and `TOGGLE` are also accepted.
+
+    **Direct channel control:** publish to `OBK_DEVICE/5/set` with payload `1` or `0`, where `5` is the channel number.
+
+    **LED control:** use `cmnd/OBK_DEVICE/Color` to set the base color, `cmnd/OBK_DEVICE/Dimmer` to set brightness, etc. Do not set LED channels directly with the `/set` topic.
+  </Accordion>
+
+  <Accordion title="How do I control a device via HTTP?">
+    The HTTP interface follows Tasmota syntax:
+    ```
+    http://192.168.0.210/cm?cmnd=POWER%20TOGGLE
+    ```
+    This runs a power toggle and returns JSON status. Any command supported by OpenBeken can be used this way.
+  </Accordion>
+
+  <Accordion title="How do I disable MQTT?">
+    On the MQTT configuration page, clear the host name field and save. Alternatively, run:
+    ```bash
+    MqttHost ""
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## TuyaMCU
+
+<AccordionGroup>
+  <Accordion title="How do I change the baud rate for TuyaMCU?">
+    Use the `tuyaMcu_setBaudRate` command after starting the driver:
+    ```bash
+    startDriver TuyaMCU
+    tuyaMcu_setBaudRate 115200
+    ```
+    Common values are `9600` and `115200`. This setting is not saved after reboot — put it in `autoexec.bat`.
+  </Accordion>
+
+  <Accordion title="Why does my TuyaMCU device ignore buttons or beep unexpectedly?">
+    Some TuyaMCU devices require a WiFi state packet indicating the device is fully connected and online. OpenBeken sends this only when both WiFi and MQTT are connected. Use `tuyaMcu_defWiFiState 4` to set the default WiFi state to "fully online" so the MCU always thinks it has a connection. See [this topic](https://www.elektroda.com/rtvforum/topic3963972.html).
+  </Accordion>
+</AccordionGroup>
+
+## OTA and firmware updates
+
+<AccordionGroup>
+  <Accordion title="How do I do an OTA update in OpenBeken?">
+    Two methods are available:
+
+    **Web interface:** go to the **OTA** tab, drag and drop the correct OTA file for your platform (`.rbl` for BK, `.bin.xz.ota` for BL602, etc.), and click **Start**.
+
+    **HTTP OTA:** paste an HTTP URL into **Config → OTA** and submit. Only HTTP is supported, not HTTPS.
+  </Accordion>
+</AccordionGroup>
+
+## LittleFS and scripts
+
+<AccordionGroup>
+  <Accordion title="How do I remove an autoexec.bat that is breaking my device in safe mode?">
+    Use the `lfs_format` command to clear the entire LittleFS partition, even in Safe Mode:
+    ```bash
+    lfs_format
+    ```
+    This is useful when a script crashes or locks up the device immediately at boot, preventing access to the web interface.
+  </Accordion>
+
+  <Accordion title="How do I set up shutters via scripting?">
+    Shutter behavior can be implemented entirely in OpenBeken scripting. See [this forum example](https://www.elektroda.com/rtvforum/viewtopic.php?t=3972935) for a complete script.
+  </Accordion>
+
+  <Accordion title="How do I preserve battery life?">
+    There are two types of battery-powered devices:
+
+    - **TuyaMCU-controlled power:** the MCU manages when the WiFi module is on. Add `PowerSave 1` to `autoexec.bat` for dynamic power saving; otherwise there is not much more to optimize.
+    - **WiFi-module-only:** use `DeepSleep [Seconds]` to sleep for a fixed time, `PinDeepSleep` to sleep until the next GPIO event, or the dedicated `DoorSensorWithDeepSleep` pin role with the DoorSensor driver.
+  </Accordion>
+</AccordionGroup>

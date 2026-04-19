@@ -1,0 +1,110 @@
+---
+title: "Initial device setup after flashing OpenBeken"
+description: "Connect your freshly flashed device to WiFi, configure GPIO pin roles using device templates or manual assignment, and set up MQTT for local home automation."
+---
+
+After flashing OpenBeken, your device boots into a minimal access point so you can reach it without knowing your network credentials. From there, the setup process follows four clear stages: connect to WiFi, identify GPIO roles, configure MQTT, and optionally enable Home Assistant discovery. The whole process typically takes under ten minutes on a device with a known template, and the community-maintained template database — now with more than 800 entries — means you often do not need to map GPIO pins by hand at all.
+
+<Steps>
+  <Step title="Connect to the OpenBeken access point">
+    After flashing, the device broadcasts a WiFi access point. Connect to it from your phone or computer.
+
+    Open a browser and navigate to:
+
+    ```text text
+    http://192.168.4.1/index
+    ```
+
+    <Note>
+      On BL602-based devices the access point address may be `192.168.169.1` instead of `192.168.4.1`. If your machine does not receive a DHCP lease from the access point, assign yourself a static IP such as `192.168.4.10` on that network interface.
+    </Note>
+  </Step>
+
+  <Step title="Configure your WiFi network">
+    In the web interface, go to **Config → WiFi**. Enter your home network's SSID and password, then click **Save** and allow the device to reboot.
+
+    After rebooting, the device joins your local network. Check your router's DHCP client list to find the assigned IP address. You can use MAC address reservation in your router to keep the IP constant across reboots.
+  </Step>
+
+  <Step title="Open the web application">
+    Once the device is on your network, navigate to its IP address in a browser. On the main page, click **Open Web Application** to access the full JavaScript-based configuration interface.
+
+    The web application is where you manage GPIO pins, drivers, MQTT, scripting, OTA updates, and more.
+  </Step>
+
+  <Step title="Configure GPIO pins">
+    GPIO configuration tells OpenBeken what each physical pin on your module is connected to — a relay, a button, an LED, a PWM output, an ADC input, and so on.
+
+    You have three options:
+
+    **Option A: Apply a device template (recommended)**
+
+    The device template database contains pre-built configurations for 800+ confirmed devices. In the web application, click **Open Web Application**, then search for your device by name or chip. When you find your device, click **Apply** to load all GPIO roles automatically.
+
+    **Option B: Import a Tuya template**
+
+    If you know your device's Tuya product ID, OpenBeken can extract GPIO roles directly from the Tuya cloud template. Use **Config → Pins → Import Tuya Template**.
+
+    **Option C: Manual assignment**
+
+    Go to **Config → Pins** and assign a role to each GPIO number. See the [GPIO pins reference](/configuration/gpio-pins) for the full list of available roles (relay, button, LED, PWM, ADC, TuyaMCU TX/RX, etc.).
+
+    <Tip>
+      If you are unsure which GPIO controls which hardware, use the GPIODoctor tool available in the web application. It cycles through GPIO states and lets you observe which relay clicks or which LED lights up.
+    </Tip>
+  </Step>
+
+  <Step title="Set up MQTT">
+    MQTT lets OpenBeken communicate with your home automation system over your local network without any cloud dependency.
+
+    Go to **Config → MQTT** and enter:
+
+    - **Host** — IP address or hostname of your MQTT broker
+    - **Port** — typically `1883`
+    - **Client ID** — a unique name for this device
+    - **Username / Password** — if your broker requires authentication
+
+    Save and reboot. The device will connect to your broker and begin publishing sensor state and accepting command topics. See the [MQTT setup guide](/connectivity/mqtt-setup) for topic structure and configuration details.
+  </Step>
+
+  <Step title="Enable Home Assistant discovery (optional)">
+    If you use Home Assistant, OpenBeken can register itself automatically without any manual YAML.
+
+    In the web application, click **Start Home Assistant Discovery**. OpenBeken publishes discovery payloads to the `homeassistant/` topic namespace, and Home Assistant picks them up within seconds. Your device's relays, sensors, and lights appear as entities ready to add to dashboards.
+
+    See the [Home Assistant integration guide](/connectivity/home-assistant) for advanced configuration, including renaming entities and customizing discovery payloads.
+  </Step>
+</Steps>
+
+## After setup
+
+With WiFi, GPIO, and MQTT configured, your device is fully operational. Here are the most common next steps:
+
+<CardGroup cols={2}>
+  <Card title="Channel types" icon="sliders" href="/configuration/channel-types">
+    Understand how OpenBeken maps GPIO roles to logical channels and how to control them via MQTT or commands.
+  </Card>
+  <Card title="Drivers overview" icon="puzzle" href="/configuration/drivers-overview">
+    Load drivers for TuyaMCU, power metering chips, I2C sensors, and LED controllers.
+  </Card>
+  <Card title="Scripting and events" icon="code" href="/scripting/overview">
+    Write event handlers and autoexec scripts to automate button actions, timers, and device behavior.
+  </Card>
+  <Card title="Safe mode" icon="shield" href="/configuration/safe-mode">
+    Learn how to recover a misconfigured device without re-flashing.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+**The access point does not appear after flashing.**
+Wait 10–15 seconds after powering the device. If the access point still does not appear, confirm the flash completed without errors and try power-cycling the device.
+
+**I can reach 192.168.4.1 but my browser shows no page.**
+Try `http://192.168.4.1/index` explicitly. Some browsers add `https://` automatically, which will not work.
+
+**The device connected to WiFi but I cannot find its IP.**
+Check your router's connected devices list. Filter by the device's MAC address, which is shown in the web interface under **Config → Device**.
+
+**GPIO changes are not taking effect.**
+Some GPIO role changes require a reboot. Use the **Reboot** button in the web interface after saving pin configuration.

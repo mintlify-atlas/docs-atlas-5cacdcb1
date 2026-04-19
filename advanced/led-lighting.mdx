@@ -1,0 +1,322 @@
+---
+title: "LED lighting control with OpenBeken"
+description: "Configure RGBCW LEDs, I2C LED drivers, WS2812B addressable strips, gamma correction, color temperature, and DDP protocol for xLights integration."
+---
+
+OpenBeken includes a full-featured LED driver that handles PWM-based RGBCW bulbs, I2C LED controllers, and individually addressable LED strips like WS2812B. The LED subsystem maintains its own state machine — tracking color, brightness, temperature, and power — and exposes a consistent command interface regardless of which underlying hardware driver is in use.
+
+## Channel mapping for RGBCW LEDs
+
+For devices with five PWM outputs (full RGBCW bulbs), OpenBeken maps channels to colors by convention:
+
+| Channel | Color |
+|---------|-------|
+| 1 | Red |
+| 2 | Green |
+| 3 | Blue |
+| 4 | Cold white |
+| 5 | Warm white |
+
+You configure these mappings in the GPIO pin config panel by assigning the **PWM** role to the appropriate pins and linking each pin to its corresponding channel index. Once assigned, the LED driver takes over and you control the light through LED commands rather than raw channel writes.
+
+<Note>
+Do not use `SetChannel` to control LED PWM pins directly. Use the `led_` family of commands instead — the LED driver manages dimming curves, gamma correction, and state persistence that raw channel writes bypass.
+</Note>
+
+## Core LED commands
+
+<AccordionGroup>
+  <Accordion title="Color and RGB mode">
+    Set the light to RGB mode and apply a hex color. Both `Color` and `led_basecolor_rgb` do the same thing — `Color` is the Tasmota-compatible alias.
+
+    ```bash
+    Color FFAA00
+    led_basecolor_rgb FF0000
+    ```
+
+    To set all five RGBCW channels at once, use `led_basecolor_rgbcw`:
+
+    ```bash
+    led_basecolor_rgbcw FF000000FF
+    ```
+
+    The hex string is RRGGBBCCWW where CC is cold white and WW is warm white, each as a single byte (00–FF).
+  </Accordion>
+
+  <Accordion title="Brightness (dimmer)">
+    `led_dimmer` sets brightness as a percentage from 0 to 100. `Dimmer` is the Tasmota-compatible alias.
+
+    ```bash
+    led_dimmer 80
+    Dimmer 50
+    ```
+
+    To increment or decrement brightness, use `add_dimmer`. The second argument selects the wrap mode:
+
+    - `0` — clamp at 0 and 100
+    - `1` — wrap around (100 → 0, 0 → 100)
+    - `2` — ping-pong (bounces between 0 and 100)
+
+    ```bash
+    add_dimmer 10
+    add_dimmer -10 0
+    ```
+  </Accordion>
+
+  <Accordion title="Color temperature (CW mode)">
+    Switch to color temperature mode using `led_temperature` or the Tasmota-compatible `CT` command. The value is in the Home Assistant mired range (154–500, where 154 is coolest and 500 is warmest).
+
+    ```bash
+    led_temperature 300
+    CT 154
+    ```
+
+    To change the displayed temperature range, use `CTRange`:
+
+    ```bash
+    CTRange 154 500
+    ```
+
+    Use `add_temperature` to shift temperature relative to the current value:
+
+    ```bash
+    add_temperature 50
+    add_temperature -25 1
+    ```
+
+    The second argument to `add_temperature` controls wrapping (1) vs clamping (0).
+  </Accordion>
+
+  <Accordion title="HSB color mode">
+    OpenBeken supports Tasmota-style HSB commands for hue (0–360), saturation (0–100), and brightness (0–100):
+
+    ```bash
+    HSBColor 240 100 80
+    HSBColor1 120
+    HSBColor2 75
+    HSBColor3 60
+    ```
+  </Accordion>
+
+  <Accordion title="Power and enable">
+    Turn the LED on or off while keeping the current color and brightness in memory:
+
+    ```bash
+    led_enableAll 1
+    led_enableAll 0
+    led_enableAll Toggle
+    ```
+
+    The `power` and `Power0` commands also work for LED devices and follow Tasmota syntax.
+  </Accordion>
+</AccordionGroup>
+
+## I2C LED drivers
+
+Many smart bulbs do not use raw PWM outputs — instead, the SoC communicates with a dedicated LED driver IC over a custom two-wire protocol. OpenBeken supports several of these chips under the `ENABLE_DRIVER_LED` compile flag.
+
+<CardGroup cols={2}>
+  <Card title="SM2135" icon="microchip">
+    Used in many BK7231T-based bulbs. Starts automatically when both SM2135 pin roles are assigned in GPIO config.
+  </Card>
+  <Card title="BP5758D" icon="microchip">
+    Found in some BL602 and Sonoff bulbs. Starts automatically when BP5758D pin roles are assigned.
+  </Card>
+  <Card title="BP1658CJ" icon="microchip">
+    Another I2C LED controller. Starts automatically from pin role assignment.
+  </Card>
+  <Card title="SM2235 / SM2335" icon="microchip">
+    Also compatible with SM2185N. Starts automatically when SM2235 pin roles are configured.
+  </Card>
+</CardGroup>
+
+All I2C LED drivers expose the same LED command interface (`Color`, `led_dimmer`, `CT`, etc.) — you do not need to call the driver-specific commands directly.
+
+### Channel remapping
+
+The physical wiring on manufactured bulbs does not always match the R→G→B→C→W channel order that OpenBeken expects. If your colors are wrong after flashing (for example, setting red actually produces green), use the driver-specific `_Map` command to remap the indices.
+
+The five arguments are the output indices for R, G, B, C, and W in order:
+
+```bash
+SM2135_Map 0 1 2 3 4
+BP5758D_Map 1 0 2 3 4
+BP1658CJ_Map 2 1 0 3 4
+SM2235_Map 0 1 2 4 3
+```
+
+In the `BP5758D_Map 1 0 2 3 4` example, the Red signal (position 0 in OBK) is sent to chip channel 1, and Green (position 1) goes to chip channel 0 — effectively swapping R and G.
+
+### Current limits
+
+Each driver exposes a current limit command. Reducing the current limit protects the LEDs from overdriving and reduces heat:
+
+```bash
+SM2135_Current 10 20
+BP5758D_Current 10 20
+BP1658CJ_Current 10 20
+SM2235_Current 15
+```
+
+For `SM2135_Current`, the arguments use SM2135-specific current codes rather than milliamp values. Check the SM2135 datasheet for the code table.
+
+<Tip>
+Flag 9 enables a separate RGB/CW write mode for SM2135 instead of writing all 5 values together. If your SM2135 bulb shows incorrect behaviour in mixed RGB+CW mode, try `SetFlag 9 1`.
+</Tip>
+
+## WS2812B addressable LEDs
+
+OpenBeken drives WS2812B (and compatible) strips through the `SM16703P` driver, which uses hardware SPI. The data pin connects to the SPI MOSI pin (P16 on BK7231T/N).
+
+### Setup
+
+Initialize the strip with the number of LEDs and an optional color order string. The default color order is RGB; common alternatives include GRB (used by many WS2812B clones):
+
+```bash
+SM16703P_Init 60 GRB
+```
+
+### Setting pixels
+
+```bash
+SM16703P_SetPixel all 255 100 0
+SM16703P_SetPixel 0 255 0 0
+SM16703P_SetPixel 1 0 255 0
+SM16703P_Start
+```
+
+`SM16703P_SetPixel` buffers the data. Call `SM16703P_Start` to push the buffer to the strip.
+
+### Animations
+
+The `PixelAnim` driver provides built-in animations. Start it and then select an animation by index:
+
+```bash
+startDriver PixelAnim
+Anim 1
+AnimSpeed 50
+```
+
+## DDP protocol for xLights
+
+DDP (Distributed Display Protocol) lets applications like xLights send per-pixel color data directly to OpenBeken over UDP. This allows you to run synchronized light shows across multiple devices.
+
+To enable DDP, start the DDP driver in your `autoexec.bat`:
+
+```bash
+startDriver DDP
+```
+
+The device will then listen for DDP packets on UDP port 4048. In xLights, add the device as a DDP output pointing to the device's IP address. OpenBeken maps the incoming pixel data directly to the LED driver output.
+
+<Note>
+Set `led_saveInterval` to a higher value (e.g., 300 seconds) when using xLights to avoid wearing out flash memory from frequent LED state saves during a show.
+
+```bash
+led_saveInterval 300
+```
+</Note>
+
+## Gamma correction
+
+By default, OpenBeken applies a gamma curve (γ = 2.2) to PWM output values. This corrects for the non-linear relationship between PWM duty cycle and perceived brightness, producing more natural-looking dimming transitions.
+
+### Adjusting gamma
+
+Use the `led_gammaCtrl` command to adjust the gamma value or calibrate RGB balance:
+
+```bash
+led_gammaCtrl gamma 2.2
+led_gammaCtrl gamma 1.0
+```
+
+Setting gamma to 1.0 effectively disables the curve (linear mode). You can also set linear mode via Flag 32:
+
+```bash
+SetFlag 32 1
+```
+
+### Minimum brightness
+
+Very low PWM duty cycles can cause LEDs to flicker or cut out entirely. Set a minimum brightness floor for RGB and CW channels:
+
+```bash
+led_gammaCtrl brtMinRGB 0.5
+led_gammaCtrl brtMinCW 0.5
+```
+
+The value is a percentage of the full range (0.0–10.0%). Use `led_gammaCtrl list` to view current settings.
+
+### RGB calibration
+
+If your warm-white setting looks tinted rather than neutral, calibrate the RGB balance using the color picker or direct values:
+
+<Steps>
+  <Step title="Clear existing calibration">
+    Reset calibration to defaults (all 1.0):
+
+    ```bash
+    led_gammaCtrl cal 1.0 1.0 1.0
+    ```
+  </Step>
+  <Step title="Adjust to neutral white">
+    Set the color picker to `#FFFFFF` and adjust physical dimmers until the bulb emits a neutral white at your preferred color temperature.
+  </Step>
+  <Step title="Save calibration">
+    Run the calibration command with no arguments. OpenBeken reads the current RGB output levels and saves them to flash:
+
+    ```bash
+    led_gammaCtrl cal
+    ```
+
+    You will see confirmation in the log output prefixed with `CFG:`.
+  </Step>
+</Steps>
+
+## LED state persistence
+
+By default, LED state (color, brightness, temperature, power) is not remembered after a reboot. Enable Flag 12 to restore the last known state on boot:
+
+```bash
+SetFlag 12 1
+```
+
+When enabled, the LED driver writes state to flash periodically. You can control how often with `led_saveInterval` (value in seconds):
+
+```bash
+led_saveInterval 10
+```
+
+Setting this too low on devices that change state frequently can accelerate flash wear. The default is conservative.
+
+<Warning>
+If you are using xLights or another application that sends hundreds of color updates per second, disable Flag 12 or set a high `led_saveInterval`. Writing to flash that frequently will damage the device.
+</Warning>
+
+## Smooth transitions
+
+Flag 18 enables experimental smooth LED colour transitions (lerp/interpolation between states). Control the transition speed with `led_lerpSpeed`, which defines RGB units of change per second:
+
+```bash
+SetFlag 18 1
+led_lerpSpeed 128
+```
+
+A `led_lerpSpeed` of 255 transitions from off to full brightness in one second. Call `led_finishFullLerp` to instantly jump to the target colour, skipping the transition.
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="GPIO pin configuration" icon="cpu" href="/configuration/gpio-pins">
+    Assign PWM and I2C LED driver roles to physical pins.
+  </Card>
+  <Card title="Channel types" icon="sliders" href="/configuration/channel-types">
+    Understand how channel types affect LED and relay behaviour.
+  </Card>
+  <Card title="MQTT setup" icon="radio" href="/connectivity/mqtt-setup">
+    Publish and subscribe to LED state topics over MQTT.
+  </Card>
+  <Card title="Flags reference" icon="flag" href="/reference/flags">
+    Full list of flags including all LED-related options.
+  </Card>
+</CardGroup>

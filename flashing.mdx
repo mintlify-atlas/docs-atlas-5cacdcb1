@@ -1,0 +1,162 @@
+---
+title: "Flash OpenBeken firmware to your device"
+description: "Step-by-step instructions for flashing OpenBeken using the GUI flash tool, UART, SPI, or OTA across BK7231, BL602, ESP, RTL, W600, W800, and XR809 chips."
+---
+
+Flashing OpenBeken replaces the stock Tuya firmware on your module with open-source firmware you control. The recommended path for most users is the **BK7231 GUI Flash Tool**, a point-and-click Windows application that handles the low-level protocol automatically. If your chip is not covered by the GUI tool, or you are on Linux/macOS, UART and SPI command-line methods are available. Once OpenBeken is running for the first time, all future updates can be delivered wirelessly via OTA.
+
+<Warning>
+  Always use a USB-to-TTL converter with **3.3 V logic levels** when connecting to any of these modules. Applying 5 V to UART pins will permanently damage the chip.
+</Warning>
+
+## Download the firmware
+
+Download the pre-built binary for your chip from the [GitHub Releases](https://github.com/openshwprojects/OpenBK7231T_App/releases) page. Choose the file that matches your exact chip family. When in doubt, check your module's markings or consult the [device template database](https://openbekeniot.github.io/webapp/devicesList.html) for 800+ confirmed device entries.
+
+## Flashing methods by chip family
+
+<Tabs>
+  <Tab title="BK7231T / BK7231N">
+
+### GUI Flash Tool (recommended)
+
+The BK7231 GUI Flash Tool supports BK7231N, BK7231T, BK7231M, BK7238, BK7252N, BK7252U, BL2028N, T34, BL602, ECR6600, LN882H, RDA5981, RTL8710B, RTL8710C, RTL8720D, RTL8720CS, W800, and W600 (write-only).
+
+<Steps>
+  <Step title="Download the GUI Flash Tool">
+    Get the latest release of BK7231GUIFlashTool from the [GitHub repository](https://github.com/openshwprojects/BK7231GUIFlashTool). Extract the ZIP archive.
+  </Step>
+  <Step title="Connect your USB-to-TTL adapter">
+    Wire your adapter to the module's **TX1** and **RX1** pins (cross-connected: adapter TX → module RX1, adapter RX → module TX1). Connect GND. TX2/RX2 are optional and used only for log output.
+  </Step>
+  <Step title="Select your chip and firmware file">
+    Open the GUI tool, choose your COM port, select the correct chip family (BK7231T or BK7231N), and browse to the firmware `.bin` file you downloaded.
+  </Step>
+  <Step title="Start flashing and power-cycle the device">
+    Click **Flash**. The tool will wait for the device to enter bootloader mode. Power-cycle the module (or briefly connect CEN to ground to reset it) until the progress bar advances. Repeat the reset if the tool does not detect the device within a few seconds.
+  </Step>
+  <Step title="Wait for completion">
+    The tool will report success when the flash is complete. Disconnect the wires and power the device normally — it will boot into OpenBeken.
+  </Step>
+</Steps>
+
+### UART method (multiplatform, Python)
+
+For Linux and macOS, use the Python-based `hid_download_py` tool.
+
+**BK7231T** (UA binary):
+
+```bash bash
+python uartprogram path/to/OpenBK7231T_app_UA_1.0.0.bin -d /dev/ttyUSB0 -w
+```
+
+**BK7231N** (QIO binary, requires `--unprotect` and `--startaddr 0x0`):
+
+```bash bash
+python uartprogram path/to/OpenBK7231N_app_QIO_1.0.0.bin --unprotect -d /dev/ttyUSB0 -w --startaddr 0x0
+```
+
+Clone the tool from [OpenBekenIOT/hid_download_py](https://github.com/OpenBekenIOT/hid_download_py) before running these commands.
+
+<Tip>
+  If flashing BK7231T fails with a CP2102 adapter, try a CH340-based USB-to-TTL dongle instead. Some CP2102 variants are not reliable enough for the BK7231T bootloader protocol.
+</Tip>
+
+### SPI method
+
+For devices where the UART bootloader is unavailable or locked, SPI flashing bypasses the chip's protection entirely. Use the [BK7231_SPI_Flasher](https://github.com/openshwprojects/BK7231_SPI_Flasher) tool. Full wiring and usage instructions are in [SPIFlash.md](https://github.com/OpenBekenIOT/hid_download_py/blob/master/SPIFlash.md).
+
+  </Tab>
+  <Tab title="XR809 / XR806">
+
+Connect a USB-to-TTL adapter to the module's UART pins, then use **phoenixMC.exe** from the OpenXR809 repository.
+
+```text text
+1. Open phoenixMC.exe
+2. Select the correct COM port
+3. Choose the OpenBeken XR809 or XR806 .img file
+4. Power-cycle the module to trigger bootloader mode
+5. Wait for flashing to complete
+```
+
+<Warning>
+  OTA updates are not supported on XR809 — a firmware update attempt will crash the device. Always use UART for XR809 updates.
+</Warning>
+
+  </Tab>
+  <Tab title="BL602">
+
+Follow the [BL602 flashing guide](https://www.elektroda.com/rtvforum/topic3889041.html) using **BLDevCube**, Bouffalo Lab's official flash utility.
+
+For 2 MB BL602 variants, use the latest `.toml` partition file. LF686 and TG7100C chips flash identically to standard BL602.
+
+<Note>
+  On Magic Home BL602 devices, it is possible to flash OpenBeken via OTA from the stock firmware without opening the device. See the [BL602 OTA tutorial](https://www.elektroda.com/rtvforum/topic4050297.html) for instructions.
+</Note>
+
+  </Tab>
+  <Tab title="W800 / W801">
+
+Use **wm_tool.exe**, the command-line utility from the [OpenW800 SDK](https://github.com/openshwprojects/OpenW800).
+
+```bash cmd
+wm_tool.exe -c COM9 -dl path\to\w800.fls
+```
+
+After running the command, `wm_tool.exe` waits for a device reset. Connect RESET to ground or re-power the module to start flashing. Do **not** manually re-power the device while flashing is in progress — wait for the tool to report completion.
+
+### OTA updates for W800/W801
+
+W800/W801 OTA is delivered via HTTP link (for example, from a Node-RED HTTP server). Point the device's update mechanism to the `w800_ota.img` file. The drag-and-drop OTA method in the web application is not yet available for this chip family.
+
+  </Tab>
+  <Tab title="ESP8266 / ESP32">
+
+ESP platforms use standard Espressif flashing tools. Use **esptool.py** or the **ESP Flash Download Tool** (Windows GUI) with the OpenBeken binary for your variant.
+
+```bash bash
+esptool.py --port /dev/ttyUSB0 --baud 460800 write_flash 0x0 OpenBK_ESP8266.bin
+```
+
+<Note>
+  ESP8266/ESP8285 with 1 MB flash does not support OTA. Use a module with 2 MB or more if you want over-the-air updates.
+</Note>
+
+  </Tab>
+  <Tab title="RTL8710 / Realtek">
+
+Realtek RTL8711AM (Ameba1) **cannot be flashed via UART** — use JTAG or SPI only. All other Realtek families (AmebaZ, AmebaZ2, AmebaD, AmebaCS, AmebaDplus, AmebaLite) support UART flashing with the appropriate tool from the [FlashTools repository](https://github.com/openshwprojects/FlashTools).
+
+The GUI Flash Tool covers RTL8710B, RTL8710C, RTL8720D, and RTL8720CS.
+
+  </Tab>
+</Tabs>
+
+## OTA updates (all supported chips)
+
+Once OpenBeken is running, you can update it over Wi-Fi without any cables.
+
+<Steps>
+  <Step title="Open the web application">
+    Navigate to your device's IP address and click **Open Web Application**.
+  </Step>
+  <Step title="Go to the OTA tab">
+    Select the **OTA** tab in the web application.
+  </Step>
+  <Step title="Drag and drop the OTA file">
+    Drag the `.rbl` OTA file (downloaded from GitHub Releases) onto the OTA field, then click the button to start the process.
+  </Step>
+  <Step title="Wait for the device to reboot">
+    The device will flash the new firmware and reboot automatically. Do not power-cycle it during this process.
+  </Step>
+</Steps>
+
+<Note>
+  OTA is not available on XR809 (crashes the device) and is not yet available via drag-and-drop for W800/W801. Some chips require HTTP OTA only — see the [supported platforms](/supported-platforms) feature matrix for per-chip OTA status.
+</Note>
+
+## After flashing: first boot
+
+On the very first boot, if OpenBeken cannot find saved WiFi credentials in the Tuya flash partition, it starts as a WiFi access point. Connect to it and open `http://192.168.4.1/index` to begin configuration. If your machine does not receive a DHCP address from the access point, configure a static IP such as `192.168.4.10` on that interface.
+
+Continue with the [initial setup](/initial-setup) guide to connect to your network and configure GPIO pins.

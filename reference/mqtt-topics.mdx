@@ -1,0 +1,172 @@
+---
+title: "OpenBeken MQTT topic reference"
+description: "Reference for all MQTT topics published and received by OpenBeken: channel set/get, LED state, energy metering data, and Tasmota TELE/STAT compatibility."
+---
+
+OpenBeken communicates over MQTT using a topic structure based on the device's short name (`OBK_DEV_NAME`). The short name is set in **Config → Options** or with the `ShortName` command, and defaults to a MAC-derived identifier such as `obk84E342`. Topics follow a `DEVICE/variable/get` pattern for published values and `DEVICE/variable/set` for incoming commands, which is broadly compatible with Tasmota-style integrations.
+
+<Note>
+  In Home Assistant, you can use the MQTT wildcard `OBK_DEV_NAME/#` to subscribe to all publishes from a single device at once.
+</Note>
+
+## Published topics (device → broker)
+
+These are the topics that the OpenBeken device publishes. Some are sent only at startup, some are sent periodically (when the periodic broadcast flag is enabled), and some are sent whenever the relevant value changes.
+
+### System status topics
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/connected` | `online` | Sent once on MQTT connect. Use as availability topic in Home Assistant. |
+| `OBK_DEV_NAME/sockets` | `5` | Number of active TCP sockets. Sent on connect and periodically if enabled. |
+| `OBK_DEV_NAME/rssi` | `-70` | WiFi signal strength in dBm. Sent on connect and periodically. |
+| `OBK_DEV_NAME/uptime` | `653` | Seconds since last reboot. Sent on connect and periodically. |
+| `OBK_DEV_NAME/freeheap` | `95168` | Free heap memory in bytes. Sent on connect and periodically. |
+| `OBK_DEV_NAME/ip` | `192.168.0.123` | Device IP address. Sent on connect and periodically. |
+| `OBK_DEV_NAME/mac` | `84:e3:42:65:d1:87` | Device MAC address. Sent on connect and periodically. |
+| `OBK_DEV_NAME/host` | `obk_t_fourRelays` | Device hostname. Sent on connect and periodically. |
+| `OBK_DEV_NAME/build` | `Build on Nov 12 2022 12:39:44 version 1.0.0` | Firmware build string. Sent on connect and periodically. |
+| `OBK_DEV_NAME/datetime` | *(ISO timestamp)* | Current date and time (requires NTP). Sent on connect and periodically. |
+
+### Channel topics
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/INDEX/get` | `1` | Published when channel `INDEX` changes. Most channels are not published by default — enable publishing for a channel by changing its channel type in the web interface or by enabling the relevant MQTT broadcast flags. |
+
+### LED state topics
+
+These are published when the LED state changes, or periodically when flag 0, 1, or 16 is enabled.
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/led_enableAll/get` | `1` | LED on/off state (`1` = on, `0` = off). |
+| `OBK_DEV_NAME/led_basecolor_rgb/get` | `FFAABB` | Current LED base color in RGB hex. |
+| `OBK_DEV_NAME/led_dimmer/get` | `100` | Current LED brightness (0–100). |
+
+### Energy metering topics
+
+Published by BL0942, BL0937, CSE7766, and other power metering drivers.
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/voltage/get` | `221` | Mains voltage in Volts. |
+| `OBK_DEV_NAME/current/get` | `1500` | Current in milliamps (1500 = 1.5 A). |
+| `OBK_DEV_NAME/power/get` | `330` | Active power in Watts. |
+| `OBK_DEV_NAME/frequency/get` | `5000` | Grid frequency × 100 (5000 = 50.00 Hz). |
+
+### Custom publish
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/YOUR_TOPIC/get` | *(any value)* | Publish any value from a script or event using `publish [YOUR_TOPIC] [YOUR_VALUE]`. Supports variable expansion: `publish temperature $CH5`. |
+
+### Tasmota-compatible topics
+
+Enable these by setting **flag 30** (`[MQTT] Enable Tasmota TELE publishes`). Used for compatibility with ioBroker, Node-RED Tasmota nodes, and similar integrations.
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `tele/OBK_DEV_NAME/STATE` | Tasmota JSON | Tasmota-style STATE message. |
+| `stat/OBK_DEV_NAME/RESULT` | Tasmota JSON | Tasmota-style RESULT message. |
+| `tele/OBK_DEV_NAME/SENSOR` | `{"Time":"1970-01-01T00:00:00","ENERGY":{"Power":0,"Voltage":249.9,"Current":0,"ConsumptionTotal":255.3,"ConsumptionLastHour":0}}` | Power metering data published by BL0937/BL0942 etc. Requires NTP for the time field. |
+| `OBK_DEV_NAME/RESULT` | `{"IrReceived":{"Protocol":"Samsung","Bits":32,"Data":"0xEE110707"}}` | IR received data (when Tasmota-format IR publish is enabled in flags). |
+
+<Note>
+  The `tele/` prefix for IR published data may be added in a future firmware version.
+</Note>
+
+## Subscribed topics (broker → device)
+
+These are the topics the OpenBeken device listens on. Publishing to these topics controls the device.
+
+### Channel control
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/INDEX/set` | `1` | Sets channel `INDEX` to the given value. Works for relay channels (`0`/`1`), PWM channels (`0`–`100`), and any channel mapped to TuyaMCU (the MCU is also updated). |
+
+### State queries
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `OBK_DEV_NAME/INDEX/get` | *(empty payload)* | Request the current value of channel `INDEX`. The device replies by publishing the same topic with the channel value as payload. |
+| `OBK_DEV_NAME/VARIABLE/get` | *(empty payload)* | Request the current value of a named variable such as `led_dimmer`, `led_enableAll`, etc. The device replies with the value. |
+
+### Command execution
+
+| Topic | Sample value | Description |
+|-------|-------------|-------------|
+| `cmnd/OBK_DEV_NAME/COMMAND_TEXT` | `COMMAND_ARGUMENTS` | Execute any OpenBeken command. This follows Tasmota syntax exactly. For example, publish to `cmnd/obk123/Color` with payload `FF0000` to set the LED color. |
+
+<Tabs>
+  <Tab title="Relay control examples">
+    ```bash
+    # Turn relay on channel 1 on
+    Topic:   cmnd/obk123/power
+    Payload: 1
+
+    # Toggle relay 2 using Tasmota syntax
+    Topic:   cmnd/obk123/power2
+    Payload: TOGGLE
+
+    # Set channel 5 directly
+    Topic:   obk123/5/set
+    Payload: 1
+    ```
+  </Tab>
+  <Tab title="LED control examples">
+    ```bash
+    # Set color to red
+    Topic:   cmnd/obk123/Color
+    Payload: FF0000
+
+    # Set brightness to 75%
+    Topic:   cmnd/obk123/Dimmer
+    Payload: 75
+
+    # Set color temperature
+    Topic:   cmnd/obk123/CT
+    Payload: 300
+
+    # Turn LED on
+    Topic:   cmnd/obk123/led_enableAll
+    Payload: 1
+    ```
+  </Tab>
+  <Tab title="Query examples">
+    ```bash
+    # Request channel 3 value
+    Topic:   obk123/3/get
+    Payload: (empty)
+    # Device replies: obk123/3/get → "1"
+
+    # Request LED brightness
+    Topic:   obk123/led_dimmer/get
+    Payload: (empty)
+    # Device replies: obk123/led_dimmer/get → "80"
+    ```
+  </Tab>
+</Tabs>
+
+## Periodic broadcast configuration
+
+The periodic broadcast feature (flag 2) publishes device state on a timer. The interval defaults to 60 seconds and can be changed with the `mqtt_broadcastInterval` command. The publish rate during a broadcast can be throttled with `mqtt_broadcastItemsPerSec` to avoid overwhelming the MQTT broker.
+
+```bash
+# Broadcast every 5 minutes
+mqtt_broadcastInterval 300
+
+# Publish at most 2 items per second during broadcast
+mqtt_broadcastItemsPerSec 2
+```
+
+<Warning>
+  Both `mqtt_broadcastInterval` and `mqtt_broadcastItemsPerSec` are runtime-only settings — they are not saved to flash. Add these commands to `autoexec.bat` or the **Config → Short startup command** field to apply them on every boot.
+</Warning>
+
+## Tasmota compatibility notes
+
+OpenBeken implements the `cmnd/DEVICE/POWER` topic family and most other Tasmota command topics. Enable **flag 30** to also receive `tele/` and `stat/` publishes. This allows OpenBeken devices to work with integrations built for Tasmota, such as ioBroker's Tasmota adapter, without modification.
+
+See the [MQTT setup guide](/connectivity/mqtt-setup) for broker configuration and the [Home Assistant integration guide](/connectivity/home-assistant) for automatic discovery setup.

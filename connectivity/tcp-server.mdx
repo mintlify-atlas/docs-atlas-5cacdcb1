@@ -1,0 +1,178 @@
+---
+title: "Use OpenBeken TCP console server for remote access"
+description: "Enable OpenBeken's built-in TCP console server to run any firmware command remotely over a raw TCP connection from PuTTY, netcat, or an automation script."
+---
+
+OpenBeken includes a lightweight TCP console server that exposes the full firmware command interface over a raw TCP socket. Once enabled, any tool that can open a plain TCP connection — PuTTY, netcat, a Python script, a Node-RED function node — can send commands and receive responses exactly as if it were the built-in web console. This is particularly useful for headless automation, CI testing, or integrations that need direct command access without making HTTP requests to the web interface.
+
+## Enabling the TCP server
+
+The TCP server is disabled by default. Enable it in one of two ways:
+
+<Tabs>
+  <Tab title="Via the Flags page">
+    Open the device web interface and go to **Config → Flags**. Find **Flag 5** and check the box next to it:
+
+    ```text
+    Flag 5 — [CMD] Enable TCP console command server (for PuTTY, etc)
+    ```
+
+    Save the settings. The server starts immediately on **port 100** without requiring a reboot.
+  </Tab>
+  <Tab title="Via MQTT command">
+    If the device is already connected to your MQTT broker, send the flag command directly:
+
+    ```text
+    Topic:   cmnd/OBK_DEV_NAME/SetFlag
+    Payload: 5 1
+    ```
+
+    Replace `OBK_DEV_NAME` with your device's MQTT client name. The server starts as soon as the command is processed.
+  </Tab>
+</Tabs>
+
+<Warning>
+  The TCP server accepts plain-text commands with no authentication. Only enable it on trusted networks, and consider whether your router or firewall should restrict access to port 100 from the broader network.
+</Warning>
+
+## Connecting to the TCP server
+
+The server listens on **port 100** and accepts one connection at a time. Use any raw TCP client:
+
+<CodeGroup>
+
+```bash netcat (Linux / macOS)
+nc 192.168.1.42 100
+```
+
+```text PuTTY (Windows)
+Connection type: Raw
+Host name:       192.168.1.42
+Port:            100
+```
+
+```python Python
+import socket
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(("192.168.1.42", 100))
+s.sendall(b"GetChannel 1\n")
+response = s.recv(1024)
+print(response.decode())
+s.close()
+```
+
+</CodeGroup>
+
+Once connected, type any supported OpenBeken command and press Enter. The device executes it and returns the result as ASCII text. The connection closes automatically if the client sends nothing for a period of time (idle timeout).
+
+## TCP-specific short commands
+
+In addition to all standard console commands, the TCP server recognises a set of short commands designed to return a single, easily parsed ASCII string. These are intended for use in scripts and automation tools where you want a clean, unambiguous value without parsing an HTML page.
+
+| Command | Returns | Example response |
+|---|---|---|
+| `GetChannel INDEX` | Current value of channel INDEX | `1` |
+| `GetReadings` | Voltage, current, and power from the energy meter | `249 0.12 30` |
+| `ShortName` | The device's short name | `obk_plug1` |
+
+**Example — read channel 1 state with netcat:**
+
+```bash
+echo "GetChannel 1" | nc 192.168.1.42 100
+```
+
+**Example — read power meter values:**
+
+```bash
+echo "GetReadings" | nc 192.168.1.42 100
+```
+
+## Running standard console commands
+
+All commands available in the web console and over MQTT are also available over TCP. This includes:
+
+<AccordionGroup>
+  <Accordion title="Channel and relay control">
+
+```text
+SetChannel 1 1       # Turn relay on channel 1 ON
+SetChannel 1 0       # Turn relay on channel 1 OFF
+SetChannel 3 180     # Set PWM on channel 3 to 180
+```
+
+  </Accordion>
+  <Accordion title="LED control">
+
+```text
+led_enableAll 1            # Enable LED output
+led_dimmer 75              # Set brightness to 75%
+led_basecolor_rgb FF4400   # Set color to orange
+```
+
+  </Accordion>
+  <Accordion title="System and diagnostics">
+
+```text
+status          # Print device status summary
+restart 1       # Reboot the device
+loglevel 4      # Set log verbosity
+```
+
+  </Accordion>
+  <Accordion title="Script execution">
+
+```text
+backlog SetChannel 1 1; Delay 100; SetChannel 1 0   # Pulse relay
+addRepeatingEvent 30 -1 SetChannel 1 1              # Schedule a repeating event
+```
+
+  </Accordion>
+</AccordionGroup>
+
+See the [command reference](/reference/commands) for the complete list.
+
+## Practical use cases
+
+<CardGroup cols={2}>
+  <Card title="Automation scripts" icon="robot" href="/scripting/overview">
+    Use netcat or Python in shell scripts or cron jobs to toggle relays, read sensor values, and run sequences of commands on a schedule.
+  </Card>
+  <Card title="CI and testing" icon="flask" href="/advanced/building">
+    Flash a firmware build and immediately connect via TCP to verify command responses and channel states without writing a full HTTP client.
+  </Card>
+  <Card title="Node-RED integration" icon="diagram-project" href="/connectivity/mqtt-setup">
+    Use a Node-RED TCP request node to send commands and parse responses, complementing your existing MQTT flows with direct command access.
+  </Card>
+  <Card title="Low-overhead polling" icon="clock" href="/reference/commands">
+    Poll energy meter readings with `GetReadings` at high frequency without generating MQTT traffic or HTTP overhead.
+  </Card>
+</CardGroup>
+
+## Connection behaviour and limits
+
+- **One connection at a time.** If a client is already connected, new connection attempts are queued or refused until the existing session closes.
+- **Idle timeout.** The server closes the connection automatically when the client sends nothing for an extended period. Keep-alive messages or periodic commands prevent this.
+- **No TLS.** The connection is unencrypted. Do not expose port 100 to the public internet.
+- **Port is fixed at 100.** There is currently no configuration option to change the port number.
+
+<Note>
+  Future versions of OpenBeken may add support for multiple simultaneous TCP connections. Check the [GitHub releases](https://github.com/openshwprojects/OpenBK7231T_App/releases) page for updates.
+</Note>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="MQTT setup" icon="broadcast-tower" href="/connectivity/mqtt-setup">
+    Control channels and run commands remotely over MQTT, including the `cmnd/` topic prefix.
+  </Card>
+  <Card title="Flags reference" icon="flag" href="/reference/flags">
+    Full list of flags, including Flag 5 for TCP server and Flag 31 for UART command line.
+  </Card>
+  <Card title="Command reference" icon="terminal" href="/reference/commands">
+    Every console command available in OpenBeken, usable over TCP, MQTT, or the web interface.
+  </Card>
+  <Card title="Scripting overview" icon="code" href="/scripting/overview">
+    Automate behaviour on-device using event handlers, timers, and the `backlog` command.
+  </Card>
+</CardGroup>

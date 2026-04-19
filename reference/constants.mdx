@@ -1,0 +1,160 @@
+---
+title: "OpenBeken numeric constants and pin role IDs"
+description: "Script variables available in OpenBeken: channel accessors ($CH1), LED state, energy meter readings, clock variables ($hour, $minute), and system constants."
+---
+
+OpenBeken supports variable expansion in commands, scripts, and MQTT payloads. Any token that starts with `$` is expanded to its current value before the command is executed. This means you can use expressions like `SetChannel 15 2*$CH14+5` or `publish temp $CH5` to reference live device state. These constants are auto-generated from the firmware source and work in console commands, `autoexec.bat` scripts, and inline expressions.
+
+## Using constants in expressions
+
+Variables can be used directly in arithmetic expressions wherever a numeric value is expected:
+
+```bash
+# Set channel 10 to twice the value of channel 3
+SetChannel 10 2*$CH3
+
+# Publish channel 5 value to MQTT
+publish temperature $CH5
+
+# Change handler that fires when power exceeds 1000 W
+AddChangeHandler Power > 1000 SetChannel 1 0
+
+# Echo current time
+echo Time is $hour:$minute:$second
+```
+
+## Channel access variables
+
+| Variable | Description |
+|----------|-------------|
+| `$CH*` | Access a channel by index. `$CH1` is channel 1, `$CH20` is channel 20, `$CH140` is channel 140. Channels up to three digits are supported. |
+| `$CH**` | Two-digit channel index form. |
+| `$CH***` | Three-digit channel index form. |
+| `$Flash*` | Access flash (persistent) variable channels — the same storage used by the "remember last state" feature for channels. |
+
+<Note>
+  OpenBeken supports channel numbering starting from both `0` and `1`. Use whichever matches your device's configuration.
+</Note>
+
+## LED state variables
+
+| Variable | Description |
+|----------|-------------|
+| `$led_dimmer` | Current LED dimmer value, 0–100 range |
+| `$led_enableAll` | Returns `1` if the LED is currently on, `0` if off |
+| `$led_hue` | Current LED hue value |
+| `$led_red` | Current LED red channel value |
+| `$led_green` | Current LED green channel value |
+| `$led_blue` | Current LED blue channel value |
+| `$led_saturation` | Current LED saturation value |
+| `$led_temperature` | Current LED color temperature value |
+
+These are useful for reading back the current LED state in change handlers or scripts:
+
+```bash
+# Publish current LED brightness to MQTT
+publish brightness $led_dimmer
+
+# Turn on a status LED if the main LED is off
+if $led_enableAll==0 then SetChannel 5 1 else SetChannel 5 0
+```
+
+## Energy metering variables
+
+These variables are populated by power metering drivers such as BL0942, BL0937, CSE7766, and CSE7761. Values are updated in real time.
+
+| Variable | Description |
+|----------|-------------|
+| `$voltage` | Current voltage reading from the energy metering chip (in Volts) |
+| `$current` | Current reading (in Amps, stored as mA × 1000 for integer math) |
+| `$power` | Active power reading (in Watts) |
+| `$frequency` | Grid frequency (in Hz × 100 for integer math) |
+| `$energy` | Running energy counter from the metering chip |
+| `$yesterday` | Yesterday's energy consumption |
+| `$today` | Today's energy consumption |
+
+<Warning>
+  When using `AddChangeHandler` with `Current` or `Frequency`, remember that values are scaled: `Current > 2000` means greater than 2 A, and `Frequency > 5000` means greater than 50 Hz.
+</Warning>
+
+```bash
+# Disconnect load when power exceeds 2400 W
+AddChangeHandler Power > 2400 SetChannel 1 0
+
+# Alert when current is abnormally high
+AddChangeHandler Current > 10000 publish alert overcurrent
+```
+
+## Clock and time variables
+
+These variables require the NTP driver to be running (`startDriver NTP`).
+
+| Variable | Description |
+|----------|-------------|
+| `$day` | Current weekday from device clock (0 = Sunday) |
+| `$hour` | Current hour (0–23) |
+| `$minute` | Current minute (0–59) |
+| `$second` | Current second (0–59) |
+| `$mday` | Day of month (1–31) |
+| `$month` | Month (1–12) |
+| `$year` | Current year (e.g. 2025) |
+| `$isDST` | Returns `1` if daylight saving time is currently active, `0` otherwise |
+| `$sunrise` | Next sunrise time in seconds from midnight (also prints to log) |
+| `$sunset` | Next sunset time in seconds from midnight (also prints to log) |
+| `$NTPOn` | Returns `1` if NTP is running and has synced time, `0` otherwise |
+
+```bash
+# Display current time on a 7-segment display
+TMGN_Print 0 0 $hour:$minute
+
+# Wait for NTP sync before scheduling events
+waitFor NTPState 1
+addClockEvent 07:00 0xFF 1 SetChannel 1 1
+```
+
+## MQTT state variables
+
+| Variable | Description |
+|----------|-------------|
+| `$MQTTOn` | Returns `1` if MQTT is currently connected, `0` otherwise |
+| `MQTTOn` | Legacy form without the `$` prefix; same behavior |
+
+## System variables
+
+| Variable | Description |
+|----------|-------------|
+| `$uptime` | Seconds elapsed since the last reboot |
+| `$failedBoots` | Count of failed (too-quick) reboots. The threshold for marking a boot as successful is configurable. |
+| `$rebootReason` | Numeric code for the reason for the last reboot |
+| `$intTemp` | Internal temperature reading from the WiFi module's on-chip sensor |
+| `$activeRepeatingEvents` | Current number of active repeating event timers |
+
+## Random number variables
+
+| Variable | Description |
+|----------|-------------|
+| `$rand01` | Random floating-point number in the range `[0, 1]` |
+| `$rand` | Random unsigned integer |
+
+## Battery driver variables
+
+| Variable | Description |
+|----------|-------------|
+| `$batteryVoltage` | Measured battery voltage from the Battery driver |
+| `$batteryLevel` | Calculated battery level percentage from the Battery driver |
+
+## Flag access
+
+| Variable | Description |
+|----------|-------------|
+| `$FLAG*` | Access any configuration flag by index. `$FLAG12` returns `1` if flag 12 is enabled. |
+| `$FLAG**` | Two-digit flag index form. |
+
+```bash
+# Conditional behavior based on flag state
+if $FLAG12==1 then echo LED state is saved else echo LED state not saved
+```
+
+<Tip>
+  Combine variables with arithmetic to compute derived values on the device itself, without needing Node-RED or Home Assistant automations. For example: `SetChannel 10 ($CH3+$CH4)/2` averages two sensor channels.
+</Tip>
